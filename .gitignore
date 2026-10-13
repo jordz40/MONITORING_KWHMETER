@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+
+# Command Code session data
+.commandcode/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
