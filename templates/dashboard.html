@@ -10,7 +10,7 @@
 <body>
 <header>
   <div class="brand"><div class="bolt">⚡</div><div><b>ENERGY<br>MONITORING</b><small>POWER MONITORING</small></div></div>
-  <div class="title">FACTORY ENERGY MONITORING <span>V3.1</span><small>REAL-TIME ELECTRICAL PERFORMANCE & ENERGY VISIBILITY</small></div>
+  <div class="title">FACTORY ENERGY MONITORING <span>V3.1</span><small>REAL-TIME ELECTRICAL PERFORMANCE &amp; ENERGY VISIBILITY</small></div>
   <div class="top-status"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light mode">☀ Light mode</button><i></i> <span id="systemStatus">CONNECTING</span> <em id="clock">--:--:--</em>　◉ ADMINISTRATOR⌄</div>
 </header>
 
@@ -18,152 +18,104 @@
 <aside>
   <div class="factory">FACTORY A <b>•</b></div>
   <nav>
-    <a class="active">▦　Overview</a>
-    <a>◫　Measurements</a>
-    <a>⌁　Trends</a>
-    <a>!　Alarms & Events <strong>3</strong></a>
-    <a>▤　Reports</a>
-    <a>⚙　Settings</a>
+    <a class="active" data-view="overview">▦　Overview</a>
+    <a data-view="measurements">◫　Measurements</a>
+    <a data-view="trends">⌁　Trends</a>
+    <a data-view="alarms">!　Alarms &amp; Events <strong id="alarmCount">0</strong></a>
+    <a data-view="reports">▤　Reports</a>
+    <a data-view="settings">⚙　Settings</a>
   </nav>
   <div class="sidebox"><small>FACTORY A</small><b>ENERGY<br>MONITORING</b><p>MODBUS TCP · DR134</p></div>
 </aside>
 
 <main>
-  <section class="pagehead">
-    <div><h1>FACTORY OVERVIEW</h1><small>Electrical demand, energy and equipment status</small></div>
-    <span class="live" id="dataState">● CONNECTING TO METER</span>
-  </section>
+  <section id="view-overview" class="app-view active-view">
+    <div class="pagehead">
+      <div><h1>FACTORY OVERVIEW</h1><small>Electrical demand, energy and equipment status</small></div>
+      <span class="live" id="dataState">● CONNECTING TO METER</span>
+    </div>
 
-  <section class="kpis">
-    <article><small>ACTIVE POWER</small><div><b id="kw">--</b> kW</div></article>
-    <article><small>ACTIVE ENERGY</small><div><b id="kwh">--</b> kWh</div></article>
-    <article><small>APPARENT POWER</small><div><b id="kva">--</b> kVA</div></article>
-    <article><small>AVERAGE VOLTAGE</small><div><b id="voltage">--</b> V</div></article>
-    <article><small>AVERAGE POWER FACTOR</small><div><b id="pf">--</b> PF</div></article>
-  </section>
-
-  <section class="panel machine-panel">
-    <div class="panel-title">▦　MACHINE STATUS <small>Live electrical measurements</small><span id="online">6 / 6 ONLINE</span></div>
-    <div id="machines" class="machines"></div>
-  </section>
-
-  <div class="grid2">
-    <section class="panel chart-panel">
-      <div class="panel-title">⌁　POWER TREND <small>Factory active power · kW</small></div>
-      <canvas id="powerChart"></canvas>
+    <section class="kpis">
+      <article><small>ACTIVE POWER</small><div><b id="kw">--</b> kW</div></article>
+      <article><small>ACTIVE ENERGY</small><div><b id="kwh">--</b> kWh</div></article>
+      <article><small>APPARENT POWER</small><div><b id="kva">--</b> kVA</div></article>
+      <article><small>AVERAGE VOLTAGE</small><div><b id="voltage">--</b> V</div></article>
+      <article><small>AVERAGE POWER FACTOR</small><div><b id="pf">--</b> PF</div></article>
     </section>
-    <section class="panel alarm-panel">
-      <div class="panel-title">⚠　ACTIVE ALARMS & EVENTS <small>Recent system events</small></div>
-      <table><thead><tr><th>TIME</th><th>ASSET</th><th>TYPE</th><th>MESSAGE</th><th>STATUS</th></tr></thead><tbody id="alarms"></tbody></table>
+
+    <section class="panel machine-panel">
+      <div class="panel-title">▦　MACHINE STATUS <small>Live electrical measurements</small><span id="online">-- / -- ONLINE</span></div>
+      <div id="machines" class="machines"></div>
     </section>
-  </div>
+
+    <div class="grid2">
+      <section class="panel chart-panel">
+        <div class="panel-title">⌁　POWER TREND <small>Factory active power · kW</small></div>
+        <canvas id="powerChart"></canvas>
+      </section>
+      <section class="panel alarm-panel">
+        <div class="panel-title">⚠　ACTIVE ALARMS &amp; EVENTS <small>Recent system events</small></div>
+        <table><thead><tr><th>TIME</th><th>ASSET</th><th>TYPE</th><th>MESSAGE</th><th>STATUS</th></tr></thead><tbody id="alarms"></tbody></table>
+      </section>
+    </div>
+  </section>
+
+  <section id="view-measurements" class="app-view">
+    <div class="pagehead"><div><h1>MEASUREMENTS</h1><small>Real-time electrical measurements by meter</small></div><span class="live">● LIVE DATA · DR134</span></div>
+    <section class="panel"><div class="panel-title">▦ ALL ASSET MEASUREMENTS <small>Click an asset row for detail</small></div>
+    <div class="table-wrap"><table class="measure-table"><thead><tr><th>ASSET</th><th>STATUS</th><th>kW</th><th>kVA</th><th>PF</th><th>V</th><th>kWh</th></tr></thead><tbody id="measurementsBody"></tbody></table></div></section>
+  </section>
+
+  <section id="view-trends" class="app-view">
+    <div class="pagehead"><div><h1>TRENDS</h1><small>Power monitoring trend</small></div><span class="live">● LIVE DATA · DR134</span></div>
+    <section class="panel big-trend"><div class="panel-title">⌁ FACTORY POWER TREND <small>Active and apparent power</small></div><div class="big-chart"><canvas id="trendChart"></canvas></div></section>
+  </section>
+
+  <section id="view-alarms" class="app-view">
+    <div class="pagehead"><div><h1>ALARMS &amp; EVENTS</h1><small>Recent alarms, warnings and system events</small></div><span class="live" id="alarmHead">● NO ACTIVE ALARMS</span></div>
+    <section class="panel"><div class="panel-title">⚠ EVENT LOG <small>Latest system activity</small></div>
+    <div class="table-wrap"><table class="event-table"><thead><tr><th>TIME</th><th>ASSET</th><th>TYPE</th><th>MESSAGE</th><th>STATUS</th></tr></thead><tbody id="eventsBody"></tbody></table></div></section>
+  </section>
+
+  <section id="view-reports" class="app-view">
+    <div class="pagehead"><div><h1>REPORTS</h1><small>Energy monitoring summary</small></div></div>
+    <section class="report-grid">
+      <div class="panel report-card"><small>TOTAL ACTIVE ENERGY</small><b id="reportKwh">--</b><span>kWh</span></div>
+      <div class="panel report-card"><small>PEAK ACTIVE POWER</small><b id="reportPeak">--</b><span>kW</span></div>
+      <div class="panel report-card"><small>AVERAGE POWER FACTOR</small><b id="reportPf">--</b><span>PF</span></div>
+    </section>
+    <section class="panel report-note"><div class="panel-title">▤ REPORT CENTER</div><p>Report generation will be connected to historical meter data after the Modbus database layer is added.</p></section>
+  </section>
+
+  <section id="view-settings" class="app-view">
+    <div class="pagehead"><div><h1>SETTINGS</h1><small>Demo configuration</small></div></div>
+    <section class="panel settings-list">
+      <div><span>Factory</span><b>FACTORY A</b></div>
+      <div><span>Assets</span><b id="settingsAssets">Configured meters</b></div>
+      <div><span>Meter</span><b>Schneider Electric iEM3155</b></div>
+      <div><span>Protocol</span><b>Modbus TCP via USR-DR134</b></div>
+      <div><span>Gateway IP</span><b id="settingsHost">--</b></div>
+      <div><span>Data source</span><b>LIVE METER DATA</b></div>
+      <div><span>Last error</span><b id="settingsError">--</b></div>
+    </section>
+    <section class="panel report-note">
+      <div class="panel-title">⌁ NETWORK DIAGNOSTICS</div>
+      <p id="discoverResult">Scan the local network to locate the DR134 gateway again.</p>
+      <p><button type="button" id="discoverBtn" class="theme-toggle">⟳ Re-scan network</button></p>
+    </section>
+  </section>
 </main>
 </div>
-
-<script>
-const chart = new Chart(document.getElementById('powerChart'), {
- type:'line',
- data:{labels:[],datasets:[
-  {label:'Active Power',data:[],borderWidth:2,tension:.35},
-  {label:'Apparent Power',data:[],borderWidth:2,tension:.35}
- ]},
- options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{y:{beginAtZero:true}}}
-});
-
-function fmt(n,d=1){if(n===null||n===undefined||!Number.isFinite(Number(n)))return '--';return Number(n).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});}
-
-let latestData = null;
-let currentMachine = null;
-
-async function refresh(){
- let d;
- try {
-  const r=await fetch('/api/data');
-  d=await r.json();
- } catch (e) {
-  document.getElementById('dataState').textContent='● WEB API UNAVAILABLE';
-  document.getElementById('systemStatus').textContent='SYSTEM OFFLINE';
-  return;
- }
- latestData = d;
- document.getElementById('dataState').textContent=d.onlineCount===d.meterCount?'● LIVE DATA · DR134':'● METER CONNECTION ERROR';
- document.getElementById('systemStatus').textContent=d.onlineCount===d.meterCount?'SYSTEM ONLINE':'SYSTEM OFFLINE';
- document.getElementById('online').textContent=`${d.onlineCount} / ${d.meterCount} ONLINE`;
- document.getElementById('kw').textContent=fmt(d.totals.kw);
- document.getElementById('kwh').textContent=fmt(d.totals.kwh);
- document.getElementById('kva').textContent=fmt(d.totals.kva);
- document.getElementById('voltage').textContent=fmt(d.totals.voltage);
- document.getElementById('pf').textContent=fmt(d.totals.pf,2);
- document.getElementById('clock').textContent=d.updated.split(' ').pop();
-
- document.getElementById('machines').innerHTML=d.machines.map(m=>`
-  <div class="machine" onclick="openMachine('${m.id}')">
-   <div class="mhead"><b>${m.id}</b> ${m.name}<span>● ${m.online?'ONLINE':'OFFLINE'}</span></div>
-   <div class="values">
-    <div><b>${fmt(m.kw)}</b><small>ACTIVE POWER<br>kW</small></div>
-    <div><b>${fmt(m.kva)}</b><small>APPARENT POWER<br>kVA</small></div>
-    <div><b>${fmt(m.pf,2)}</b><small>POWER FACTOR<br>PF</small></div>
-    <div><b>${fmt(m.voltage)}</b><small>VOLTAGE<br>V</small></div>
-    <div><b>${fmt(m.kwh)}</b><small>ENERGY<br>kWh</small></div>
-   </div>
-  </div>`).join('');
-
- if(currentMachine){ const fresh=d.machines.find(m=>m.id===currentMachine.id); if(fresh){currentMachine=fresh; updateMachineDetail();} }
- document.getElementById('alarms').innerHTML=d.alarms.map(a=>`
-  <tr><td>${a.time}</td><td>${a.machine}</td><td><span class="${a.type.toLowerCase()}">${a.type}</span></td><td>${a.message}</td><td>${a.status}</td></tr>`).join('');
-
- chart.data.labels=d.history.map(x=>x.time);
- chart.data.datasets[0].data=d.history.map(x=>x.kw);
- chart.data.datasets[1].data=d.history.map(x=>x.kva);
- chart.update('none');
-}
-refresh(); setInterval(refresh,3000);
-</script>
-
-
-<section id="view-measurements" class="app-view">
-  <div class="pagehead"><div><h1>MEASUREMENTS</h1><small>Real-time electrical measurements by meter</small></div><span class="live">● LIVE DATA · DR134</span></div>
-  <section class="panel"><div class="panel-title">▦ ALL ASSET MEASUREMENTS <small>Click an asset row for detail</small></div>
-  <div class="table-wrap"><table class="measure-table"><thead><tr><th>ASSET</th><th>STATUS</th><th>kW</th><th>kVA</th><th>PF</th><th>V</th><th>kWh</th></tr></thead><tbody id="measurementsBody"></tbody></table></div></section>
-</section>
-<section id="view-trends" class="app-view">
-  <div class="pagehead"><div><h1>TRENDS</h1><small>Power monitoring trend</small></div><span class="live">● LIVE DATA · DR134</span></div>
-  <section class="panel big-trend"><div class="panel-title">⌁ FACTORY POWER TREND <small>Active and apparent power</small></div><div class="big-chart"><canvas id="trendChart"></canvas></div></section>
-</section>
-<section id="view-alarms" class="app-view">
-  <div class="pagehead"><div><h1>ALARMS & EVENTS</h1><small>Recent alarms, warnings and system events</small></div><span class="live">3 OPEN</span></div>
-  <section class="panel"><div class="panel-title">⚠ EVENT LOG <small>Latest system activity</small></div>
-  <div class="table-wrap"><table class="event-table"><thead><tr><th>TIME</th><th>ASSET</th><th>TYPE</th><th>MESSAGE</th><th>STATUS</th></tr></thead><tbody id="eventsBody"></tbody></table></div></section>
-</section>
-<section id="view-reports" class="app-view">
-  <div class="pagehead"><div><h1>REPORTS</h1><small>Energy monitoring summary</small></div></div>
-  <section class="report-grid">
-    <div class="panel report-card"><small>TOTAL ACTIVE ENERGY</small><b id="reportKwh">--</b><span>kWh</span></div>
-    <div class="panel report-card"><small>PEAK ACTIVE POWER</small><b id="reportPeak">--</b><span>kW</span></div>
-    <div class="panel report-card"><small>AVERAGE POWER FACTOR</small><b id="reportPf">--</b><span>PF</span></div>
-  </section>
-  <section class="panel report-note"><div class="panel-title">▤ REPORT CENTER</div><p>Report generation will be connected to historical meter data after the Modbus database layer is added.</p></section>
-</section>
-<section id="view-settings" class="app-view">
-  <div class="pagehead"><div><h1>SETTINGS</h1><small>Demo configuration</small></div></div>
-  <section class="panel settings-list">
-    <div><span>Factory</span><b>FACTORY A</b></div>
-    <div><span>Assets</span><b>Configured meters</b></div>
-    <div><span>Meter</span><b>Schneider Electric iEM3155</b></div>
-    <div><span>Protocol</span><b>Modbus TCP via USR-DR134</b></div>
-    <div><span>Data source</span><b>LIVE METER DATA</b></div>
-  </section>
-</section>
 
 <div id="machineModal" class="modal">
   <div class="modal-card">
     <div class="modal-head">
       <div>
         <small>MACHINE DETAIL</small>
-        <h2 id="detailTitle">M01 — EXTRUDER 01</h2>
-        <span class="online-dot">● ONLINE · DEMO DATA</span>
+        <h2 id="detailTitle">--</h2>
+        <span class="online-dot" id="detailState">● OFFLINE</span>
       </div>
-      <button onclick="closeMachine()">×</button>
+      <button type="button" onclick="closeMachine()">×</button>
     </div>
     <div class="detail-kpis">
       <div><small>ACTIVE POWER</small><b id="dKw">--</b><span>kW</span></div>
@@ -180,9 +132,9 @@ refresh(); setInterval(refresh,3000);
       <section class="detail-panel info-panel">
         <div class="panel-title">▦ ASSET INFORMATION</div>
         <div class="info-row"><span>Asset ID</span><b id="dId">--</b></div>
-        <div class="info-row"><span>Status</span><b class="online-text">ONLINE</b></div>
-        <div class="info-row"><span>Communication</span><b>MODBUS RTU · DEMO</b></div>
-        <div class="info-row"><span>Meter</span><b>Schneider iEM3255</b></div>
+        <div class="info-row"><span>Status</span><b class="online-text" id="dStatus">--</b></div>
+        <div class="info-row"><span>Communication</span><b>MODBUS TCP · DR134</b></div>
+        <div class="info-row"><span>Meter</span><b>Schneider iEM3155</b></div>
         <div class="info-row"><span>Last Update</span><b id="dUpdated">--</b></div>
       </section>
     </div>
@@ -190,6 +142,221 @@ refresh(); setInterval(refresh,3000);
 </div>
 
 <script>
+const fmt = (n, d = 1) => {
+  if (n === null || n === undefined || !Number.isFinite(Number(n))) return '--';
+  return Number(n).toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
+};
+
+const baseLineOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {legend: {position: 'bottom'}},
+  scales: {y: {beginAtZero: true}}
+};
+
+const chart = new Chart(document.getElementById('powerChart'), {
+  type: 'line',
+  data: {labels: [], datasets: [
+    {label: 'Active Power', data: [], borderWidth: 2, tension: .35},
+    {label: 'Apparent Power', data: [], borderWidth: 2, tension: .35}
+  ]},
+  options: baseLineOptions
+});
+
+const trendChart = new Chart(document.getElementById('trendChart'), {
+  type: 'line',
+  data: {labels: [], datasets: [
+    {label: 'Active Power', data: [], borderWidth: 2, tension: .35},
+    {label: 'Apparent Power', data: [], borderWidth: 2, tension: .35}
+  ]},
+  options: baseLineOptions
+});
+
+let machineChart = null;
+let latestData = null;
+let currentMachineId = null;
+const machineSeries = {};
+
+function applyChartTheme(c) {
+  if (!c) return;
+  const dark = document.body.dataset.theme === 'dark';
+  c.options.plugins.legend.labels.color = dark ? '#c8d6e2' : '#526b7a';
+  c.options.scales.x = {ticks: {color: dark ? '#9fb1c0' : '#718792'}, grid: {color: dark ? '#2d3d4d' : '#e3eaee'}};
+  c.options.scales.y = {beginAtZero: true, ticks: {color: dark ? '#9fb1c0' : '#718792'}, grid: {color: dark ? '#2d3d4d' : '#e3eaee'}};
+  c.update('none');
+}
+
+function applyChartThemes() {
+  [chart, trendChart, machineChart].forEach(applyChartTheme);
+}
+
+const navLinks = Array.from(document.querySelectorAll('nav a[data-view]'));
+function showView(name) {
+  document.querySelectorAll('main .app-view').forEach(el => {
+    el.classList.toggle('active-view', el.id === `view-${name}`);
+  });
+  navLinks.forEach(a => a.classList.toggle('active', a.dataset.view === name));
+  if (name === 'trends' && trendChart) trendChart.resize();
+}
+navLinks.forEach(a => a.addEventListener('click', e => {
+  e.preventDefault();
+  showView(a.dataset.view);
+}));
+
+function openMachine(id) {
+  currentMachineId = id;
+  document.getElementById('machineModal').classList.add('show');
+  updateMachineDetail();
+}
+function closeMachine() {
+  document.getElementById('machineModal').classList.remove('show');
+  currentMachineId = null;
+}
+document.getElementById('machineModal').addEventListener('click', e => {
+  if (e.target.id === 'machineModal') closeMachine();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeMachine();
+});
+
+function updateMachineDetail() {
+  if (!latestData) return;
+  const m = latestData.machines.find(x => x.id === currentMachineId);
+  if (!m) return;
+  document.getElementById('detailTitle').textContent = `${m.id} — ${m.name}`;
+  document.getElementById('detailState').textContent = m.online ? '● ONLINE' : '● OFFLINE';
+  document.getElementById('dKw').textContent = fmt(m.kw);
+  document.getElementById('dKva').textContent = fmt(m.kva);
+  document.getElementById('dPf').textContent = fmt(m.pf, 2);
+  document.getElementById('dVoltage').textContent = fmt(m.voltage);
+  document.getElementById('dKwh').textContent = fmt(m.kwh);
+  document.getElementById('dId').textContent = m.id;
+  document.getElementById('dStatus').textContent = m.online ? 'ONLINE' : 'OFFLINE';
+  document.getElementById('dUpdated').textContent = latestData.updated;
+
+  if (!machineChart) {
+    machineChart = new Chart(document.getElementById('machineChart'), {
+      type: 'line',
+      data: {labels: [], datasets: [{label: 'Active Power (kW)', data: [], borderWidth: 2, tension: .35}]},
+      options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'bottom'}}, scales: {y: {beginAtZero: true}}}
+    });
+    applyChartTheme(machineChart);
+  }
+  const series = machineSeries[m.id] || [];
+  machineChart.data.labels = series.map(s => s.time);
+  machineChart.data.datasets[0].data = series.map(s => s.kw);
+  machineChart.update('none');
+}
+
+function alarmRows(alarms) {
+  return alarms.map(a => `
+    <tr><td>${a.time}</td><td>${a.machine}</td><td><span class="${String(a.type).toLowerCase()}">${a.type}</span></td><td>${a.message}</td><td>${a.status}</td></tr>`).join('');
+}
+
+async function refresh() {
+  let d;
+  try {
+    const r = await fetch('/api/data');
+    d = await r.json();
+  } catch (e) {
+    document.getElementById('dataState').textContent = '● WEB API UNAVAILABLE';
+    document.getElementById('systemStatus').textContent = 'SYSTEM OFFLINE';
+    return;
+  }
+  latestData = d;
+  const host = d.dr134 && d.dr134.host;
+  const connecting = d.status === 'connecting';
+  const allOnline = !connecting && d.onlineCount === d.meterCount;
+  document.getElementById('dataState').textContent = connecting ? '● CONNECTING TO METER' : (allOnline ? `● LIVE DATA · ${host || 'DR134'}` : '● METER CONNECTION ERROR');
+  document.getElementById('systemStatus').textContent = connecting ? 'CONNECTING' : (allOnline ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE');
+  document.getElementById('online').textContent = `${d.onlineCount} / ${d.meterCount} ONLINE`;
+  document.getElementById('kw').textContent = fmt(d.totals.kw);
+  document.getElementById('kwh').textContent = fmt(d.totals.kwh);
+  document.getElementById('kva').textContent = fmt(d.totals.kva);
+  document.getElementById('voltage').textContent = fmt(d.totals.voltage);
+  document.getElementById('pf').textContent = fmt(d.totals.pf, 2);
+  document.getElementById('clock').textContent = d.updated.split(' ').pop();
+
+  document.getElementById('machines').innerHTML = d.machines.map(m => `
+    <div class="machine" onclick="openMachine('${m.id}')">
+     <div class="mhead"><b>${m.id}</b> ${m.name}<span>● ${m.online ? 'ONLINE' : 'OFFLINE'}</span></div>
+     <div class="values">
+      <div><b>${fmt(m.kw)}</b><small>ACTIVE POWER<br>kW</small></div>
+      <div><b>${fmt(m.kva)}</b><small>APPARENT POWER<br>kVA</small></div>
+      <div><b>${fmt(m.pf, 2)}</b><small>POWER FACTOR<br>PF</small></div>
+      <div><b>${fmt(m.voltage)}</b><small>VOLTAGE<br>V</small></div>
+      <div><b>${fmt(m.kwh)}</b><small>ENERGY<br>kWh</small></div>
+     </div>
+     ${m.error ? `<div class="merror">${m.error}</div>` : ''}
+    </div>`).join('');
+
+  document.getElementById('measurementsBody').innerHTML = d.machines.map(m => `
+    <tr onclick="openMachine('${m.id}')">
+     <td>${m.id} — ${m.name}</td>
+     <td><span class="status-online">● ${m.online ? 'ONLINE' : 'OFFLINE'}</span></td>
+     <td>${fmt(m.kw)}</td>
+     <td>${fmt(m.kva)}</td>
+     <td>${fmt(m.pf, 2)}</td>
+     <td>${fmt(m.voltage)}</td>
+     <td>${fmt(m.kwh)}</td>
+    </tr>`).join('');
+
+  const alarms = d.alarms || [];
+  const counts = document.getElementById('alarmCount');
+  counts.textContent = alarms.length;
+  counts.style.display = alarms.length ? '' : 'none';
+  const rows = alarmRows(alarms);
+  document.getElementById('alarms').innerHTML = rows || '<tr><td colspan="5">No active alarms</td></tr>';
+  document.getElementById('eventsBody').innerHTML = rows || '<tr><td colspan="5">No events recorded</td></tr>';
+  document.getElementById('alarmHead').textContent = alarms.length ? `${alarms.length} OPEN` : '● NO ACTIVE ALARMS';
+  document.getElementById('settingsAssets').textContent = `${d.meterCount} configured meter${d.meterCount === 1 ? '' : 's'}`;
+  document.getElementById('settingsHost').textContent = host ? `${host}:${d.dr134.port}` : 'Auto-detect · not found';
+  document.getElementById('settingsError').textContent = d.dr134.error || 'None';
+
+  chart.data.labels = d.history.map(x => x.time);
+  chart.data.datasets[0].data = d.history.map(x => x.kw);
+  chart.data.datasets[1].data = d.history.map(x => x.kva);
+  chart.update('none');
+
+  trendChart.data.labels = d.history.map(x => x.time);
+  trendChart.data.datasets[0].data = d.history.map(x => x.kw);
+  trendChart.data.datasets[1].data = d.history.map(x => x.kva);
+  trendChart.update('none');
+
+  const peak = d.history.reduce((mx, x) => Math.max(mx, Number(x.kw) || 0), 0);
+  document.getElementById('reportKwh').textContent = fmt(d.totals.kwh);
+  document.getElementById('reportPeak').textContent = fmt(peak);
+  document.getElementById('reportPf').textContent = fmt(d.totals.pf, 2);
+
+  d.machines.forEach(m => {
+    const arr = machineSeries[m.id] || (machineSeries[m.id] = []);
+    arr.push({time: d.updated.split(' ').pop(), kw: m.online && Number.isFinite(Number(m.kw)) ? Number(m.kw) : null});
+    if (arr.length > 20) arr.shift();
+  });
+  if (currentMachineId) updateMachineDetail();
+}
+refresh();
+setInterval(refresh, 3000);
+
+const discoverBtn = document.getElementById('discoverBtn');
+discoverBtn.addEventListener('click', async () => {
+  const out = document.getElementById('discoverResult');
+  out.textContent = 'Scanning the local network ...';
+  try {
+    const r = await fetch('/api/discover');
+    const info = await r.json();
+    if (info.host) {
+      out.textContent = `Found DR134 at ${info.host}:${info.port}.`;
+    } else {
+      const open = (info.openHosts || []).join(', ') || 'none';
+      out.textContent = `Not found. Scanned ${info.scanned ?? 'n/a'} addresses · port 502 open on: ${open}.`;
+    }
+  } catch (e) {
+    out.textContent = 'Scan failed: ' + e;
+  }
+  refresh();
+});
+
 const themeToggle = document.getElementById('themeToggle');
 function applyTheme(theme) {
   document.body.dataset.theme = theme;
@@ -197,12 +364,7 @@ function applyTheme(theme) {
   themeToggle.textContent = dark ? '☀ Light mode' : '☾ Dark mode';
   themeToggle.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
   localStorage.setItem('factory-energy-theme', theme);
-  if (typeof chart !== 'undefined') {
-    chart.options.plugins.legend.labels.color = dark ? '#c8d6e2' : '#526b7a';
-    chart.options.scales.x = {ticks:{color:dark?'#9fb1c0':'#718792'},grid:{color:dark?'#2d3d4d':'#e3eaee'}};
-    chart.options.scales.y = {beginAtZero:true,ticks:{color:dark?'#9fb1c0':'#718792'},grid:{color:dark?'#2d3d4d':'#e3eaee'}};
-    chart.update('none');
-  }
+  applyChartThemes();
 }
 applyTheme(localStorage.getItem('factory-energy-theme') || 'dark');
 themeToggle.addEventListener('click', () => applyTheme(document.body.dataset.theme === 'dark' ? 'light' : 'dark'));

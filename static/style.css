@@ -85,3 +85,6 @@ body[data-theme="dark"] .settings-list>div{border-color:#344555}
 body[data-theme="dark"] .theme-toggle{background:#263746;border-color:#4a6072;color:#d9e8f4}
 body[data-theme="dark"] .theme-toggle:hover{background:#304556}
 @media(max-width:700px){.top-status{padding-right:10px}.theme-toggle{margin-right:7px}}
+
+.merror{margin:0 16px 14px;padding:8px 10px;background:#fdecec;border:1px solid #f2b8b8;color:#9b2c2c;font-size:9px}
+body[data-theme="dark"] .merror{background:#3a2027;border-color:#6d3a44;color:#ffb3b3}
