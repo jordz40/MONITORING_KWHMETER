@@ -10,8 +10,8 @@
 <body>
 <header>
   <div class="brand"><div class="bolt">⚡</div><div><b>ENERGY<br>MONITORING</b><small>POWER MONITORING</small></div></div>
-  <div class="title">FACTORY ENERGY MONITORING <span>V3.1</span><small>REAL-TIME ELECTRICAL PERFORMANCE &amp; ENERGY VISIBILITY</small></div>
-  <div class="top-status"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light mode">☀ Light mode</button><i></i> <span id="systemStatus">CONNECTING</span> <em id="clock">--:--:--</em>　◉ ADMINISTRATOR⌄</div>
+  <div class="title">FRONTE CLASSIC INDONESIA<small>ENGINEERING TEAM</small></div>
+  <div class="top-status"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light mode">☀ Light mode</button><i id="statusDot"></i> <span id="systemStatus">CONNECTING</span> <em id="clock">--:--:--</em>　◉ ADMINISTRATOR⌄</div>
 </header>
 
 <div class="layout">
@@ -224,14 +224,18 @@ function updateMachineDetail() {
   const m = latestData.machines.find(x => x.id === currentMachineId);
   if (!m) return;
   document.getElementById('detailTitle').textContent = `${m.id} — ${m.name}`;
-  document.getElementById('detailState').textContent = m.online ? '● ONLINE' : '● OFFLINE';
+  const detailState = document.getElementById('detailState');
+  detailState.textContent = m.online ? '● ONLINE' : '● OFFLINE';
+  detailState.classList.toggle('is-offline', !m.online);
   document.getElementById('dKw').textContent = fmt(m.kw);
   document.getElementById('dKva').textContent = fmt(m.kva);
   document.getElementById('dPf').textContent = fmt(m.pf, 2);
   document.getElementById('dVoltage').textContent = fmt(m.voltage);
   document.getElementById('dKwh').textContent = fmt(m.kwh);
   document.getElementById('dId').textContent = m.id;
-  document.getElementById('dStatus').textContent = m.online ? 'ONLINE' : 'OFFLINE';
+  const detailStatus = document.getElementById('dStatus');
+  detailStatus.textContent = m.online ? 'ONLINE' : 'OFFLINE';
+  detailStatus.classList.toggle('is-offline', !m.online);
   document.getElementById('dUpdated').textContent = latestData.updated;
 
   if (!machineChart) {
@@ -267,8 +271,15 @@ async function refresh() {
   const host = d.dr134 && d.dr134.host;
   const connecting = d.status === 'connecting';
   const allOnline = !connecting && d.onlineCount === d.meterCount;
-  document.getElementById('dataState').textContent = connecting ? '● CONNECTING TO METER' : (allOnline ? `● LIVE DATA · ${host || 'DR134'}` : '● METER CONNECTION ERROR');
-  document.getElementById('systemStatus').textContent = connecting ? 'CONNECTING' : (allOnline ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE');
+  const meterOffline = !connecting && !allOnline;
+  const noMetersOnline = !connecting && d.onlineCount === 0;
+  const dataState = document.getElementById('dataState');
+  dataState.textContent = connecting ? '● CONNECTING TO METER' : (allOnline ? `● LIVE DATA · ${host || 'DR134'}` : '● METER CONNECTION ERROR');
+  dataState.classList.toggle('is-error', meterOffline);
+  const systemStatus = document.getElementById('systemStatus');
+  systemStatus.textContent = connecting ? 'CONNECTING' : (allOnline ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE');
+  systemStatus.classList.toggle('is-offline', meterOffline);
+  document.getElementById('statusDot').classList.toggle('is-offline', noMetersOnline);
   document.getElementById('online').textContent = `${d.onlineCount} / ${d.meterCount} ONLINE`;
   document.getElementById('kw').textContent = fmt(d.totals.kw);
   document.getElementById('kwh').textContent = fmt(d.totals.kwh);
@@ -279,7 +290,7 @@ async function refresh() {
 
   document.getElementById('machines').innerHTML = d.machines.map(m => `
     <div class="machine" onclick="openMachine('${m.id}')">
-     <div class="mhead"><b>${m.id}</b> ${m.name}<span>● ${m.online ? 'ONLINE' : 'OFFLINE'}</span></div>
+     <div class="mhead"><b>${m.id}</b> ${m.name}<span class="${m.online ? 'status-online' : 'status-offline'}">● ${m.online ? 'ONLINE' : 'OFFLINE'}</span></div>
      <div class="values">
       <div><b>${fmt(m.kw)}</b><small>ACTIVE POWER<br>kW</small></div>
       <div><b>${fmt(m.kva)}</b><small>APPARENT POWER<br>kVA</small></div>
@@ -293,7 +304,7 @@ async function refresh() {
   document.getElementById('measurementsBody').innerHTML = d.machines.map(m => `
     <tr onclick="openMachine('${m.id}')">
      <td>${m.id} — ${m.name}</td>
-     <td><span class="status-online">● ${m.online ? 'ONLINE' : 'OFFLINE'}</span></td>
+     <td><span class="${m.online ? 'status-online' : 'status-offline'}">● ${m.online ? 'ONLINE' : 'OFFLINE'}</span></td>
      <td>${fmt(m.kw)}</td>
      <td>${fmt(m.kva)}</td>
      <td>${fmt(m.pf, 2)}</td>

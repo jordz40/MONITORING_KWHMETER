@@ -9,9 +9,15 @@ Current meter configuration
 ----------------------------
 - DR134 IP: AUTO-DETECTED (see below)
 - TCP port: 502
-- Meter: Slave ID 1
+- Meters: 5 on one RS-485 daisy chain
 - Serial settings on DR134 and meter must match (currently 19200, 8 data bits,
   Even parity, 1 stop bit).
+
+    Slave ID 1   M01   Mesin Trimming HDL 3
+    Slave ID 2   M02   Mesin Extruder
+    Slave ID 3   M03   Mesin Coating
+    Slave ID 4   M04   Mesin Trimming HDL 1
+    Slave ID 5   M05   Mesin Trimming HDL 2
 
 Automatic DR134 IP discovery
 ----------------------------
@@ -99,5 +105,4 @@ meter to METER_CONFIG in app.py, for example:
     {"id": "M02", "name": "TRIMMING 2", "slave_id": 2},
 
 All meters on the RS-485 bus must use the same serial settings. Keep the meter
-IDs unique. Only Slave ID 1 is enabled in the current configuration because it
-is the meter tested so far.
+IDs unique. All five meters above are already configured in METER_CONFIG.

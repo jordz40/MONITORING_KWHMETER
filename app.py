@@ -53,10 +53,14 @@ DISCOVERY_MAX_WORKERS = 64
 DISCOVERY_COOLDOWN_SECONDS = 15.0
 DISCOVERY_MAX_HOSTS = 1024
 
-# Only ID 1 is enabled because that is the meter currently tested in Modbus Poll.
-# Add entries after assigning unique Slave IDs to the other physical meters.
+# One entry per physical meter. Every meter on the shared RS-485 bus needs a
+# unique Modbus Slave ID.
 METER_CONFIG = [
-    {"id": "M01", "name": "TEST METER · ID 1", "slave_id": 1},
+    {"id": "M01", "name": "Mesin Trimming HDL 3", "slave_id": 1},
+    {"id": "M02", "name": "Mesin Extruder", "slave_id": 2},
+    {"id": "M03", "name": "Mesin Coating", "slave_id": 3},
+    {"id": "M04", "name": "Mesin Trimming HDL 1", "slave_id": 4},
+    {"id": "M05", "name": "Mesin Trimming HDL 2", "slave_id": 5},
 ]
 
 # iEM3155 Modbus PDU (zero-based) addresses, matching the register list. Each
