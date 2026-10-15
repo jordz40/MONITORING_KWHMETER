@@ -41,6 +41,8 @@
       <article><small>APPARENT POWER</small><div><b id="kva">--</b> kVA</div></article>
       <article><small>AVERAGE VOLTAGE</small><div><b id="voltage">--</b> V</div></article>
       <article><small>AVERAGE POWER FACTOR</small><div><b id="pf">--</b> PF</div></article>
+      <article><small>ENERGY TARIFF 1</small><div><b id="kwhT1">--</b> kWh</div></article>
+      <article><small>ENERGY TARIFF 2</small><div><b id="kwhT2">--</b> kWh</div></article>
     </section>
 
     <section class="panel machine-panel">
@@ -63,7 +65,7 @@
   <section id="view-measurements" class="app-view">
     <div class="pagehead"><div><h1>MEASUREMENTS</h1><small>Real-time electrical measurements by meter</small></div><span class="live">● LIVE DATA · DR134</span></div>
     <section class="panel"><div class="panel-title">▦ ALL ASSET MEASUREMENTS <small>Click an asset row for detail</small></div>
-    <div class="table-wrap"><table class="measure-table"><thead><tr><th>ASSET</th><th>STATUS</th><th>kW</th><th>kVA</th><th>PF</th><th>V</th><th>kWh</th></tr></thead><tbody id="measurementsBody"></tbody></table></div></section>
+    <div class="table-wrap"><table class="measure-table"><thead><tr><th>ASSET</th><th>STATUS</th><th>kW</th><th>kVA</th><th>PF</th><th>V</th><th>kWh</th><th>T1 kWh</th><th>T2 kWh</th></tr></thead><tbody id="measurementsBody"></tbody></table></div></section>
   </section>
 
   <section id="view-trends" class="app-view">
@@ -123,6 +125,8 @@
       <div><small>POWER FACTOR</small><b id="dPf">--</b><span>PF</span></div>
       <div><small>VOLTAGE</small><b id="dVoltage">--</b><span>V</span></div>
       <div><small>ACTIVE ENERGY</small><b id="dKwh">--</b><span>kWh</span></div>
+      <div><small>ENERGY TARIFF 1</small><b id="dKwhT1">--</b><span>kWh</span></div>
+      <div><small>ENERGY TARIFF 2</small><b id="dKwhT2">--</b><span>kWh</span></div>
     </div>
     <div class="detail-grid">
       <section class="detail-panel">
@@ -232,6 +236,8 @@ function updateMachineDetail() {
   document.getElementById('dPf').textContent = fmt(m.pf, 2);
   document.getElementById('dVoltage').textContent = fmt(m.voltage);
   document.getElementById('dKwh').textContent = fmt(m.kwh);
+  document.getElementById('dKwhT1').textContent = fmt(m.kwh_t1);
+  document.getElementById('dKwhT2').textContent = fmt(m.kwh_t2);
   document.getElementById('dId').textContent = m.id;
   const detailStatus = document.getElementById('dStatus');
   detailStatus.textContent = m.online ? 'ONLINE' : 'OFFLINE';
@@ -283,6 +289,8 @@ async function refresh() {
   document.getElementById('online').textContent = `${d.onlineCount} / ${d.meterCount} ONLINE`;
   document.getElementById('kw').textContent = fmt(d.totals.kw);
   document.getElementById('kwh').textContent = fmt(d.totals.kwh);
+  document.getElementById('kwhT1').textContent = fmt(d.totals.kwh_t1);
+  document.getElementById('kwhT2').textContent = fmt(d.totals.kwh_t2);
   document.getElementById('kva').textContent = fmt(d.totals.kva);
   document.getElementById('voltage').textContent = fmt(d.totals.voltage);
   document.getElementById('pf').textContent = fmt(d.totals.pf, 2);
@@ -297,6 +305,8 @@ async function refresh() {
       <div><b>${fmt(m.pf, 2)}</b><small>POWER FACTOR<br>PF</small></div>
       <div><b>${fmt(m.voltage)}</b><small>VOLTAGE<br>V</small></div>
       <div><b>${fmt(m.kwh)}</b><small>ENERGY<br>kWh</small></div>
+      <div><b>${fmt(m.kwh_t1)}</b><small>ENERGY T1<br>kWh</small></div>
+      <div><b>${fmt(m.kwh_t2)}</b><small>ENERGY T2<br>kWh</small></div>
      </div>
      ${m.error ? `<div class="merror">${m.error}</div>` : ''}
     </div>`).join('');
@@ -310,6 +320,8 @@ async function refresh() {
      <td>${fmt(m.pf, 2)}</td>
      <td>${fmt(m.voltage)}</td>
      <td>${fmt(m.kwh)}</td>
+     <td>${fmt(m.kwh_t1)}</td>
+     <td>${fmt(m.kwh_t2)}</td>
     </tr>`).join('');
 
   const alarms = d.alarms || [];

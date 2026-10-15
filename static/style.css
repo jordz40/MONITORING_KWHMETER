@@ -109,3 +109,14 @@ body[data-theme="dark"] .status-offline,body[data-theme="dark"] .online-dot.is-o
 body[data-theme="dark"] #statusDot.is-offline{background:#ff7b7b}
 body[data-theme="dark"] #dataState.is-error{background:#3a2027;border-color:#6d3a44;color:#ffb3b3}
 body[data-theme="dark"] .online-text.is-offline{color:#ff7b7b!important}
+
+/* Seven KPI cards (energy tariffs added): fill the row and wrap evenly */
+.kpis{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+@media(max-width:800px){.kpis{grid-template-columns:repeat(2,1fr)}}
+
+/* Seven items per row now: machine detail KPIs and machine card values */
+.detail-kpis{grid-template-columns:repeat(7,1fr);gap:6px;padding:10px}
+.detail-kpis>div{padding:10px 8px}
+.detail-kpis b{font-size:16px;margin-top:5px}
+.values{gap:8px 10px;margin-top:10px}
+@media(max-width:800px){.detail-kpis{grid-template-columns:repeat(2,1fr)}}

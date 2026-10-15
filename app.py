@@ -33,7 +33,7 @@ MANUAL_SUBNETS = [part.strip() for part in os.environ.get("DR134_SUBNET", "").sp
 # The DR134 bridges to the meter over RS-485. The line is half-duplex and the
 # gateway needs a short gap between transactions, otherwise responses get lost.
 # Modbus Poll works because it scans each window once per second.
-MODBUS_TIMEOUT_SECONDS = 3.0
+MODBUS_TIMEOUT_SECONDS = float(os.environ.get("DR134_TIMEOUT", "1.5"))
 MODBUS_REQUEST_DELAY_SECONDS = float(os.environ.get("DR134_REQUEST_DELAY", "0.05"))
 # The DR134 broadcasts other masters' frames to every client, so a reply may be
 # preceded by many unrelated frames. Cap how many we skip before giving up.
@@ -72,6 +72,8 @@ REGISTER_MAP = {
     "kva": 3075,           # Total apparent power, kVA
     "pf": 3083,            # Total power factor
     "kwh": 45099,          # Total active energy import, kWh
+    "kwh_t1": 45119,       # Active energy import rate A (tariff 1), kWh
+    "kwh_t2": 45121,       # Active energy import rate B (tariff 2), kWh
 }
 
 # The four power/voltage registers sit close together, so read them in one
@@ -79,12 +81,21 @@ REGISTER_MAP = {
 # RS-485 line and keeps every value from the same frame.
 VALUE_BLOCK_START = 3025
 VALUE_BLOCK_COUNT = 60                        # 3025..3084 (pf is a 2-register float)
+VALUE_KEYS = ("voltage", "kw", "kva", "pf")
 VALUE_OFFSETS = {
-    key: (address - VALUE_BLOCK_START) * 2
-    for key, address in REGISTER_MAP.items() if key != "kwh"
+    key: (REGISTER_MAP[key] - VALUE_BLOCK_START) * 2 for key in VALUE_KEYS
 }
+
+# The energy registers are contiguous too (45099..45126): total import followed
+# by the per-tariff rate A/B counters, so one read covers all of them. Tariff
+# counters only exist on the iEM3155 and read 0 until multi-tariff is enabled
+# on the meter.
 ENERGY_BLOCK_START = 45099
-ENERGY_BLOCK_COUNT = 2
+ENERGY_BLOCK_COUNT = 28
+ENERGY_KEYS = ("kwh", "kwh_t1", "kwh_t2")
+ENERGY_OFFSETS = {
+    key: (REGISTER_MAP[key] - ENERGY_BLOCK_START) * 2 for key in ENERGY_KEYS
+}
 
 _poll_lock = threading.Lock()
 _host_lock = threading.Lock()
@@ -178,13 +189,18 @@ def _read_meter(sock: socket.socket, meter: dict) -> dict:
     except (OSError, ModbusError, struct.error) as exc:
         errors.append(f"daya/tegangan: {exc}")
 
-    time.sleep(MODBUS_REQUEST_DELAY_SECONDS)
-    try:
-        block = _read_block(sock, meter["slave_id"], ENERGY_BLOCK_START, ENERGY_BLOCK_COUNT)
-        value = struct.unpack(">f", block[0:4])[0]
-        readings["kwh"] = value if math.isfinite(value) else None
-    except (OSError, ModbusError, struct.error) as exc:
-        errors.append(f"energi: {exc}")
+    # An unwired slave answers nothing at all, so skip its energy block instead
+    # of burning another timeout on it. This keeps polling quick while meters
+    # are still being installed.
+    if any(readings[key] is not None for key in VALUE_KEYS):
+        time.sleep(MODBUS_REQUEST_DELAY_SECONDS)
+        try:
+            block = _read_block(sock, meter["slave_id"], ENERGY_BLOCK_START, ENERGY_BLOCK_COUNT)
+            for key, offset in ENERGY_OFFSETS.items():
+                value = struct.unpack(">f", block[offset:offset + 4])[0]
+                readings[key] = value if math.isfinite(value) else None
+        except (OSError, ModbusError, struct.error) as exc:
+            errors.append(f"energi: {exc}")
 
     online = any(value is not None for value in readings.values())
     return {**meter, **readings, "online": online, "error": "; ".join(errors) or None}
@@ -193,11 +209,7 @@ def _read_meter(sock: socket.socket, meter: dict) -> dict:
 def _empty_meter(meter: dict, error: str) -> dict:
     return {
         **meter,
-        "kw": None,
-        "kva": None,
-        "pf": None,
-        "voltage": None,
-        "kwh": None,
+        **{key: None for key in REGISTER_MAP},
         "online": False,
         "error": error,
     }
@@ -388,16 +400,19 @@ def _aggregate(meters: list[dict]) -> dict:
         values = [meter[key] for meter in online if meter[key] is not None]
         return sum(values) if values else None
 
-    total_kw = total("kw")
-    total_kva = total("kva")
+    power_factors = [meter["pf"] for meter in online if meter["pf"] is not None]
     voltages = [meter["voltage"] for meter in online if meter["voltage"] is not None]
 
+    # Factory overview: power and energy are summed across the online machines.
+    # Voltage and power factor are ratios, so they are averaged (not added up).
     return {
-        "kw": total_kw,
-        "kva": total_kva,
+        "kw": total("kw"),
+        "kva": total("kva"),
         "kwh": total("kwh"),
+        "kwh_t1": total("kwh_t1"),
+        "kwh_t2": total("kwh_t2"),
         "voltage": sum(voltages) / len(voltages) if voltages else None,
-        "pf": total_kw / total_kva if total_kw is not None and total_kva else None,
+        "pf": sum(power_factors) / len(power_factors) if power_factors else None,
     }
 
 
@@ -436,7 +451,7 @@ def _current_snapshot() -> dict:
         "status": "connecting",
         "onlineCount": 0,
         "meterCount": len(METER_CONFIG),
-        "totals": {"kw": None, "kva": None, "kwh": None, "voltage": None, "pf": None},
+        "totals": {"kw": None, "kva": None, "kwh": None, "kwh_t1": None, "kwh_t2": None, "voltage": None, "pf": None},
         "machines": [_empty_meter(meter, "Menunggu pembacaan pertama ...") for meter in METER_CONFIG],
         "history": [],
         "alarms": [],

@@ -46,6 +46,8 @@ Optional variables:
     DR134_REQUEST_DELAY=0.05      gap in seconds between register reads.
                                    Increase (e.g. 0.2) if readings are flaky.
     DR134_POLL_INTERVAL=3         seconds between background meter polls.
+    DR134_TIMEOUT=1.5             seconds to wait for a reply. Raise it if
+                                   readings are flaky on a very busy bus.
 
 Reading the meter
 -----------------
@@ -74,6 +76,13 @@ Register map (zero-based PDU address; Modbus Poll shows these one-based):
     Total apparent power    3075   (3076)
     Total power factor      3083   (3084)
     Total active energy     45099  (45100)
+    Energy tariff 1 (rate A) 45119 (45120)
+    Energy tariff 2 (rate B) 45121 (45122)
+
+Energy and the two tariff counters are contiguous, so they are read in one
+block. The tariff registers only exist on the iEM3155 and stay 0 until
+multi-tariff is enabled and configured on the meter itself (the dashboard only
+reads the counters; which tariff is active is decided by the meter).
 
 Diagnostics
 -----------
