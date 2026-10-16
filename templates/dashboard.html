@@ -39,7 +39,6 @@
       <article><small>ACTIVE POWER</small><div><b id="kw">--</b> kW</div></article>
       <article><small>ACTIVE ENERGY</small><div><b id="kwh">--</b> kWh</div></article>
       <article><small>APPARENT POWER</small><div><b id="kva">--</b> kVA</div></article>
-      <article><small>AVERAGE VOLTAGE</small><div><b id="voltage">--</b> V</div></article>
       <article><small>AVERAGE POWER FACTOR</small><div><b id="pf">--</b> PF</div></article>
       <article><small>ENERGY TARIFF 1</small><div><b id="kwhT1">--</b> kWh</div></article>
       <article><small>ENERGY TARIFF 2</small><div><b id="kwhT2">--</b> kWh</div></article>
@@ -80,13 +79,40 @@
   </section>
 
   <section id="view-reports" class="app-view">
-    <div class="pagehead"><div><h1>REPORTS</h1><small>Energy monitoring summary</small></div></div>
-    <section class="report-grid">
-      <div class="panel report-card"><small>TOTAL ACTIVE ENERGY</small><b id="reportKwh">--</b><span>kWh</span></div>
-      <div class="panel report-card"><small>PEAK ACTIVE POWER</small><b id="reportPeak">--</b><span>kW</span></div>
-      <div class="panel report-card"><small>AVERAGE POWER FACTOR</small><b id="reportPf">--</b><span>PF</span></div>
+    <div class="pagehead">
+      <div><h1>REPORTS</h1><small>Riwayat kWh harian per mesin</small></div>
+      <span class="live" id="reportState">● --</span>
+    </div>
+
+    <section class="panel report-toolbar">
+      <label>Bulan <select id="reportMonth"></select></label>
+      <label>Tahun <select id="reportYear"></select></label>
+      <label class="report-check"><input type="checkbox" id="reportTariffs"> Rincian tarif (T1/T2)</label>
+      <button type="button" id="reportReload" class="theme-toggle">⟳ Muat ulang</button>
+      <a id="reportExport" class="theme-toggle" href="/report.xlsx">⬇ Ekspor Excel</a>
     </section>
-    <section class="panel report-note"><div class="panel-title">▤ REPORT CENTER</div><p>Report generation will be connected to historical meter data after the Modbus database layer is added.</p></section>
+
+    <section class="report-grid">
+      <div class="panel report-card"><small>TOTAL BULAN</small><b id="reportMonthKwh">--</b><span>kWh</span></div>
+      <div class="panel report-card"><small>TARIF 1</small><b id="reportMonthT1">--</b><span>kWh</span></div>
+      <div class="panel report-card"><small>TARIF 2</small><b id="reportMonthT2">--</b><span>kWh</span></div>
+      <div class="panel report-card"><small>HARI LENGKAP</small><b id="reportCompleteDays">--</b><span>hari</span></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">⌁ kWh HARIAN <small id="reportChartSub">—</small></div>
+      <div class="report-chart-box"><canvas id="reportChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">▤ REKAP HARIAN <small>Total kWh per mesin</small></div>
+      <div class="table-wrap" id="reportTableWrap"></div>
+    </section>
+
+    <section class="panel" id="reportTariffPanel" hidden>
+      <div class="panel-title">▤ RINCIAN TARIF <small>Tarif 1 / Tarif 2 per mesin</small></div>
+      <div class="table-wrap" id="reportTariffWrap"></div>
+    </section>
   </section>
 
   <section id="view-settings" class="app-view">
@@ -98,6 +124,8 @@
       <div><span>Protocol</span><b>Modbus TCP via USR-DR134</b></div>
       <div><span>Gateway IP</span><b id="settingsHost">--</b></div>
       <div><span>Data source</span><b>LIVE METER DATA</b></div>
+      <div><span>Database</span><b id="settingsDb">--</b></div>
+      <div><span>Riwayat terakhir</span><b id="settingsLastSample">--</b></div>
       <div><span>Last error</span><b id="settingsError">--</b></div>
     </section>
     <section class="panel report-note">
@@ -177,6 +205,7 @@ const trendChart = new Chart(document.getElementById('trendChart'), {
 });
 
 let machineChart = null;
+let reportChart = null;
 let latestData = null;
 let currentMachineId = null;
 const machineSeries = {};
@@ -191,7 +220,7 @@ function applyChartTheme(c) {
 }
 
 function applyChartThemes() {
-  [chart, trendChart, machineChart].forEach(applyChartTheme);
+  [chart, trendChart, machineChart, reportChart].forEach(applyChartTheme);
 }
 
 const navLinks = Array.from(document.querySelectorAll('nav a[data-view]'));
@@ -201,6 +230,10 @@ function showView(name) {
   });
   navLinks.forEach(a => a.classList.toggle('active', a.dataset.view === name));
   if (name === 'trends' && trendChart) trendChart.resize();
+  if (name === 'reports') {
+    if (reportChart) reportChart.resize();
+    loadReport();
+  }
 }
 navLinks.forEach(a => a.addEventListener('click', e => {
   e.preventDefault();
@@ -269,30 +302,39 @@ async function refresh() {
     const r = await fetch('/api/data');
     d = await r.json();
   } catch (e) {
-    document.getElementById('dataState').textContent = '● WEB API UNAVAILABLE';
-    document.getElementById('systemStatus').textContent = 'SYSTEM OFFLINE';
+    const offlineBadge = document.getElementById('dataState');
+    offlineBadge.textContent = '● WEB API UNAVAILABLE';
+    offlineBadge.classList.add('is-error');
+    const offlineStatus = document.getElementById('systemStatus');
+    offlineStatus.textContent = 'SYSTEM OFFLINE';
+    offlineStatus.classList.remove('is-online');
+    offlineStatus.classList.add('is-offline');
+    document.getElementById('statusDot').classList.add('is-offline');
     return;
   }
   latestData = d;
   const host = d.dr134 && d.dr134.host;
   const connecting = d.status === 'connecting';
-  const allOnline = !connecting && d.onlineCount === d.meterCount;
-  const meterOffline = !connecting && !allOnline;
-  const noMetersOnline = !connecting && d.onlineCount === 0;
+  // One meter reading is enough to call the system online; the machines that
+  // are still missing show their own OFFLINE state on the machine cards.
+  const anyOnline = !connecting && d.onlineCount > 0;
+  const noneOnline = !connecting && d.onlineCount === 0;
   const dataState = document.getElementById('dataState');
-  dataState.textContent = connecting ? '● CONNECTING TO METER' : (allOnline ? `● LIVE DATA · ${host || 'DR134'}` : '● METER CONNECTION ERROR');
-  dataState.classList.toggle('is-error', meterOffline);
+  dataState.textContent = connecting
+    ? '● CONNECTING TO METER'
+    : (anyOnline ? `● LIVE DATA · ${host || 'DR134'}` : '● METER CONNECTION ERROR');
+  dataState.classList.toggle('is-error', noneOnline);
   const systemStatus = document.getElementById('systemStatus');
-  systemStatus.textContent = connecting ? 'CONNECTING' : (allOnline ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE');
-  systemStatus.classList.toggle('is-offline', meterOffline);
-  document.getElementById('statusDot').classList.toggle('is-offline', noMetersOnline);
+  systemStatus.textContent = connecting ? 'CONNECTING' : (anyOnline ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE');
+  systemStatus.classList.toggle('is-online', anyOnline);
+  systemStatus.classList.toggle('is-offline', noneOnline);
+  document.getElementById('statusDot').classList.toggle('is-offline', noneOnline);
   document.getElementById('online').textContent = `${d.onlineCount} / ${d.meterCount} ONLINE`;
   document.getElementById('kw').textContent = fmt(d.totals.kw);
   document.getElementById('kwh').textContent = fmt(d.totals.kwh);
   document.getElementById('kwhT1').textContent = fmt(d.totals.kwh_t1);
   document.getElementById('kwhT2').textContent = fmt(d.totals.kwh_t2);
   document.getElementById('kva').textContent = fmt(d.totals.kva);
-  document.getElementById('voltage').textContent = fmt(d.totals.voltage);
   document.getElementById('pf').textContent = fmt(d.totals.pf, 2);
   document.getElementById('clock').textContent = d.updated.split(' ').pop();
 
@@ -346,10 +388,11 @@ async function refresh() {
   trendChart.data.datasets[1].data = d.history.map(x => x.kva);
   trendChart.update('none');
 
-  const peak = d.history.reduce((mx, x) => Math.max(mx, Number(x.kw) || 0), 0);
-  document.getElementById('reportKwh').textContent = fmt(d.totals.kwh);
-  document.getElementById('reportPeak').textContent = fmt(peak);
-  document.getElementById('reportPf').textContent = fmt(d.totals.pf, 2);
+  const db = d.storage || {};
+  document.getElementById('settingsDb').textContent = `${db.database}@${db.host}:${db.port}`;
+  document.getElementById('settingsLastSample').textContent = db.ok
+    ? `${db.lastSample || '-'} · setiap ${db.sampleMinutes} menit`
+    : `GAGAL — ${db.error || 'tidak diketahui'}`;
 
   d.machines.forEach(m => {
     const arr = machineSeries[m.id] || (machineSeries[m.id] = []);
@@ -378,6 +421,105 @@ discoverBtn.addEventListener('click', async () => {
     out.textContent = 'Scan failed: ' + e;
   }
   refresh();
+});
+
+// --- Reports ---------------------------------------------------------------
+const MONTH_NAMES = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const reportMonthEl = document.getElementById('reportMonth');
+const reportYearEl = document.getElementById('reportYear');
+const reportTariffPanel = document.getElementById('reportTariffPanel');
+const STATUS_TEXT = {complete: 'lengkap', partial: 'sebagian', missing: 'tanpa data'};
+const STATUS_CLASS = {complete: '', partial: 'report-status-partial', missing: 'report-status-missing'};
+
+(function fillReportSelectors() {
+  const now = new Date();
+  reportMonthEl.innerHTML = MONTH_NAMES.map((name, index) => `<option value="${index + 1}">${name}</option>`).join('');
+  reportMonthEl.value = now.getMonth() + 1;
+  let years = '';
+  for (let year = now.getFullYear(); year >= now.getFullYear() - 6; year -= 1) {
+    years += `<option value="${year}">${year}</option>`;
+  }
+  reportYearEl.innerHTML = years;
+  reportYearEl.value = now.getFullYear();
+})();
+
+function reportCell(value) {
+  if (value === null || value === undefined) return '<span class="report-day-missing">-</span>';
+  return fmt(value);
+}
+
+function reportTable(headers, rows) {
+  return `<table class="measure-table"><thead><tr>`
+    + headers.map(h => `<th>${h}</th>`).join('')
+    + `</tr></thead><tbody>${rows.join('')}</tbody></table>`;
+}
+
+function renderReport(data) {
+  document.getElementById('reportMonthKwh').textContent = fmt(data.monthTotals.kwh);
+  document.getElementById('reportMonthT1').textContent = fmt(data.monthTotals.t1);
+  document.getElementById('reportMonthT2').textContent = fmt(data.monthTotals.t2);
+  const complete = data.days.filter(d => d.status === 'complete').length;
+  document.getElementById('reportCompleteDays').textContent = `${complete} / ${data.days.length}`;
+  document.getElementById('reportChartSub').textContent = `${MONTH_NAMES[data.month - 1]} ${data.year}`;
+
+  if (!reportChart) {
+    reportChart = new Chart(document.getElementById('reportChart'), {
+      type: 'bar',
+      data: {labels: [], datasets: [{label: 'Total kWh', data: [], backgroundColor: '#168ec8'}]},
+      options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
+                scales: {x: {grid: {display: false}}, y: {beginAtZero: true}}}
+    });
+    applyChartTheme(reportChart);
+  }
+  reportChart.data.labels = data.days.map(d => d.dayNumber);
+  reportChart.data.datasets[0].data = data.days.map(d => d.total.kwh);
+  reportChart.update('none');
+
+  const recapRows = data.days.map(d =>
+    `<tr><td>${d.dayNumber}</td>`
+    + data.meters.map(m => `<td>${reportCell(d.meters[m.id].kwh)}</td>`).join('')
+    + `<td><b>${reportCell(d.total.kwh)}</b></td>`
+    + `<td class="${STATUS_CLASS[d.status]}">${STATUS_TEXT[d.status]}</td></tr>`);
+  document.getElementById('reportTableWrap').innerHTML =
+    reportTable(['Tanggal', ...data.meters.map(m => m.id), 'TOTAL kWh', 'Status'], recapRows);
+
+  const tariffRows = [];
+  data.days.forEach(d => data.meters.forEach(m => {
+    const value = d.meters[m.id];
+    const t1t2 = (value.t1 !== null && value.t2 !== null) ? value.t1 + value.t2 : null;
+    const diff = (value.kwh !== null && t1t2 !== null) ? value.kwh - t1t2 : null;
+    tariffRows.push(`<tr><td>${d.dayNumber}</td><td>${m.id}</td>`
+      + `<td>${reportCell(value.t1)}</td><td>${reportCell(value.t2)}</td><td>${reportCell(t1t2)}</td>`
+      + `<td>${reportCell(value.kwh)}</td><td>${reportCell(diff)}</td>`
+      + `<td class="${STATUS_CLASS[d.status]}">${STATUS_TEXT[d.status]}</td></tr>`);
+  }));
+  document.getElementById('reportTariffWrap').innerHTML =
+    reportTable(['Tanggal', 'Mesin', 'Tarif 1', 'Tarif 2', 'T1+T2', 'Total', 'Selisih', 'Status'], tariffRows);
+}
+
+async function loadReport() {
+  const year = reportYearEl.value;
+  const month = reportMonthEl.value;
+  document.getElementById('reportExport').href = `/report.xlsx?year=${year}&month=${month}`;
+  const state = document.getElementById('reportState');
+  state.textContent = '● memuat ...';
+  try {
+    const response = await fetch(`/api/report?year=${year}&month=${month}`);
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    renderReport(data);
+    state.textContent = data.hasData ? `● ${MONTH_NAMES[month - 1]} ${year}` : '● belum ada data';
+  } catch (error) {
+    state.textContent = '● gagal: ' + error.message;
+  }
+}
+
+document.getElementById('reportReload').addEventListener('click', loadReport);
+reportMonthEl.addEventListener('change', loadReport);
+reportYearEl.addEventListener('change', loadReport);
+document.getElementById('reportTariffs').addEventListener('change', event => {
+  reportTariffPanel.hidden = !event.target.checked;
 });
 
 const themeToggle = document.getElementById('themeToggle');

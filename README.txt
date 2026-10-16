@@ -13,11 +13,11 @@ Current meter configuration
 - Serial settings on DR134 and meter must match (currently 19200, 8 data bits,
   Even parity, 1 stop bit).
 
-    Slave ID 1   M01   Mesin Trimming HDL 3
-    Slave ID 2   M02   Mesin Extruder
-    Slave ID 3   M03   Mesin Coating
-    Slave ID 4   M04   Mesin Trimming HDL 1
-    Slave ID 5   M05   Mesin Trimming HDL 2
+    Slave ID 1   M01   Mesin Extruder
+    Slave ID 2   M02   Mesin Coating
+    Slave ID 3   M03   Mesin Trimming HDL 1
+    Slave ID 4   M04   Mesin Trimming HDL 2
+    Slave ID 5   M05   Mesin Trimming HDL 3
 
 Automatic DR134 IP discovery
 ----------------------------
@@ -95,11 +95,49 @@ Troubleshooting: if discovery still finds nothing, make sure this computer is
 on the same subnet as the DR134. Assigning the DR134 a static IP or a DHCP
 reservation is the most reliable fix.
 
+Database and history
+--------------------
+Daily kWh history is stored in MySQL/MariaDB (no SQLite). Create the database
+and an application user once:
+
+    CREATE DATABASE energy CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+    CREATE USER 'energi'@'localhost' IDENTIFIED BY 'PASSWORD_KAMU';
+    GRANT ALL PRIVILEGES ON energy.* TO 'energi'@'localhost';
+
+Then copy config.ini.example to config.ini and fill in the password. config.ini
+is gitignored, so credentials never get committed. The tables are created
+automatically on start:
+
+    samples  one row per meter every sample_minutes (default 15), kept forever
+    daily    one row per day per meter; this is what the reports read
+    meta     bookkeeping, e.g. how far the daily rollup has run
+
+Polling writes a reading only when the counters change hands to a new 15-minute
+slot, and the daily rollup runs once a day. A day is marked "sebagian" (partial)
+when the readings do not bracket midnight closely, and "tanpa data" when there
+was no reading at all - numbers are never invented. Because the meter only
+stores a running total, a day cannot be reconstructed after the fact, so the
+program should run 24/7 (see below).
+
+Reports
+-------
+Open the Reports tab: pick a month and a year to see the daily kWh per machine
+(M01..M05) plus the factory total, a daily bar chart, the monthly totals and a
+"Rincian tarif" toggle for the Tarif 1 / Tarif 2 breakdown. "Ekspor Excel"
+downloads an .xlsx with three sheets: Harian per Mesin, Rincian Tarif and
+Ringkasan Bulanan. The same data is available as JSON at
+/api/report?year=2026&month=10 and as a file at /report.xlsx.
+
 Run
 ---
 1. Install dependencies: pip install -r requirements.txt
-2. Start the dashboard: python app.py
-3. Open http://127.0.0.1:5000
+2. Copy config.ini.example to config.ini and fill in the database password
+3. Start the dashboard: python app.py
+4. Open http://127.0.0.1:5000
+
+For a server deployment, set [dashboard] host = 0.0.0.0 in config.ini so other
+computers can reach it, and run it as a Windows service / Task Scheduler task so
+it keeps collecting history without anyone opening a terminal.
 
 The web server polls five iEM3155 values every time the browser refreshes the
 data endpoint: average L-L voltage, total active power, total apparent power,

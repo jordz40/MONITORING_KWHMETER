@@ -1,0 +1,21 @@
+; Salin file ini menjadi config.ini lalu isi bagian [database].
+; config.ini tidak ikut ter-commit karena berisi password.
+
+[database]
+host = 127.0.0.1
+port = 3306
+user = energi
+password = ISI_PASSWORD_DISINI
+database = energy
+
+[dashboard]
+; 127.0.0.1 = hanya bisa dibuka dari komputer ini saja.
+; 0.0.0.0   = bisa dibuka dari komputer lain di jaringan (untuk server).
+; Port harus dibuka juga di Windows Firewall, dan untuk jaringan pabrik di sini
+; dipakai 40000.
+host = 0.0.0.0
+port = 40000
+
+[history]
+; Seberapa sering counter kWh dicatat ke database (menit).
+sample_minutes = 15

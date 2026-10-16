@@ -9,6 +9,9 @@ env/
 # Logs
 *.log
 
+# Local database credentials (copy config.ini.example and fill it in)
+config.ini
+
 # Command Code session data
 .commandcode/
 

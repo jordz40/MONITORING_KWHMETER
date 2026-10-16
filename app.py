@@ -10,9 +10,12 @@ import socket
 import struct
 import threading
 import time
-from datetime import datetime
+from datetime import date, datetime
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request, send_file
+
+import reporting
+import storage
 
 app = Flask(__name__)
 
@@ -46,9 +49,10 @@ MODBUS_TRANSACTION_BASE = 0xF000
 POLL_INTERVAL_SECONDS = float(os.environ.get("DR134_POLL_INTERVAL", "3"))
 
 # Discovery tuning. The first response from an RS-485 gateway can take up to a
-# scan cycle, so the Modbus probe waits longer than a plain port check.
+# scan cycle, so the Modbus probe waits longer than a plain port check. The
+# timeout applies to each slave id the probe tries.
 DISCOVERY_CONNECT_TIMEOUT_SECONDS = 0.5
-DISCOVERY_PROBE_TIMEOUT_SECONDS = 3.0
+DISCOVERY_PROBE_TIMEOUT_SECONDS = 2.0
 DISCOVERY_MAX_WORKERS = 64
 DISCOVERY_COOLDOWN_SECONDS = 15.0
 DISCOVERY_MAX_HOSTS = 1024
@@ -56,11 +60,11 @@ DISCOVERY_MAX_HOSTS = 1024
 # One entry per physical meter. Every meter on the shared RS-485 bus needs a
 # unique Modbus Slave ID.
 METER_CONFIG = [
-    {"id": "M01", "name": "Mesin Trimming HDL 3", "slave_id": 1},
-    {"id": "M02", "name": "Mesin Extruder", "slave_id": 2},
-    {"id": "M03", "name": "Mesin Coating", "slave_id": 3},
-    {"id": "M04", "name": "Mesin Trimming HDL 1", "slave_id": 4},
-    {"id": "M05", "name": "Mesin Trimming HDL 2", "slave_id": 5},
+    {"id": "M01", "name": "Mesin Extruder", "slave_id": 1},
+    {"id": "M02", "name": "Mesin Coating", "slave_id": 2},
+    {"id": "M03", "name": "Mesin Trimming HDL 1", "slave_id": 3},
+    {"id": "M04", "name": "Mesin Trimming HDL 2", "slave_id": 4},
+    {"id": "M05", "name": "Mesin Trimming HDL 3", "slave_id": 5},
 ]
 
 # iEM3155 Modbus PDU (zero-based) addresses, matching the register list. Each
@@ -108,6 +112,9 @@ _state_lock = threading.Lock()
 _poller_lock = threading.Lock()
 _latest: dict | None = None
 _poller_started = False
+_last_sample_slot: datetime | None = None
+_last_finalize_day: date | None = None
+_storage_state: dict = {"ok": False, "error": "belum tersambung"}
 
 
 class ModbusError(RuntimeError):
@@ -272,19 +279,21 @@ def _port_open(host: str) -> bool:
         return False
 
 
-def _modbus_probe(host: str) -> bool:
-    """True when the host answers our Modbus TCP request.
+def _probe_slave_ids() -> list[int]:
+    """Slave ids to try when looking for a gateway: every configured meter."""
+    slave_ids = sorted({meter["slave_id"] for meter in METER_CONFIG})
+    return slave_ids or [1]
 
-    Any well-formed frame carrying our transaction id counts, even an exception
-    reply, because that still proves a Modbus server is listening.
-    """
-    probe_transaction = 0xFFFF
+
+def _probe_slave(host: str, slave_id: int) -> bool:
+    """True when the host answers our request for one slave id."""
+    probe_transaction = 0xFF00 + (slave_id & 0xFF)
     deadline = time.monotonic() + DISCOVERY_PROBE_TIMEOUT_SECONDS
     try:
         with socket.create_connection((host, MODBUS_PORT), timeout=DISCOVERY_PROBE_TIMEOUT_SECONDS) as sock:
             sock.settimeout(DISCOVERY_PROBE_TIMEOUT_SECONDS)
             while time.monotonic() < deadline:
-                request = struct.pack(">HHHBBHH", probe_transaction, 0, 6, METER_CONFIG[0]["slave_id"], 3, REGISTER_MAP["voltage"], 2)
+                request = struct.pack(">HHHBBHH", probe_transaction, 0, 6, slave_id, 3, REGISTER_MAP["voltage"], 2)
                 sock.sendall(request)
                 for _ in range(MAX_FRAMES_PER_READ):
                     if time.monotonic() >= deadline:
@@ -299,6 +308,16 @@ def _modbus_probe(host: str) -> bool:
             return False
     except (OSError, ModbusError, struct.error):
         return False
+
+
+def _modbus_probe(host: str) -> bool:
+    """True when the host answers for any configured meter.
+
+    The gateway is a transparent bridge, so it only replies while a meter with
+    the requested slave id exists on the RS-485 bus. Probing just one id would
+    miss a gateway whose meters happen to use other ids, so try them all.
+    """
+    return any(_probe_slave(host, slave_id) for slave_id in _probe_slave_ids())
 
 
 def _discover_host() -> str | None:
@@ -401,19 +420,46 @@ def _aggregate(meters: list[dict]) -> dict:
         return sum(values) if values else None
 
     power_factors = [meter["pf"] for meter in online if meter["pf"] is not None]
-    voltages = [meter["voltage"] for meter in online if meter["voltage"] is not None]
 
     # Factory overview: power and energy are summed across the online machines.
-    # Voltage and power factor are ratios, so they are averaged (not added up).
+    # Voltage is deliberately not aggregated: machines may run on different
+    # levels (220 V vs 380 V), so an average would not mean anything. Read the
+    # per-machine voltage on the machine card or in the detail view instead.
+    # Power factor is a ratio, so it is averaged rather than added up.
     return {
         "kw": total("kw"),
         "kva": total("kva"),
         "kwh": total("kwh"),
         "kwh_t1": total("kwh_t1"),
         "kwh_t2": total("kwh_t2"),
-        "voltage": sum(voltages) / len(voltages) if voltages else None,
         "pf": sum(power_factors) / len(power_factors) if power_factors else None,
     }
+
+
+def _record_history(meters: list[dict]) -> None:
+    """Save the counters every SAMPLE_MINUTES and roll finished days up.
+
+    Both steps are best effort: if the database is down the dashboard keeps
+    showing live data and the next poll tries again.
+    """
+    global _last_sample_slot, _last_finalize_day, _storage_state
+    now = datetime.now()
+    interval = max(1, storage.SAMPLE_MINUTES)
+    slot = now.replace(minute=(now.minute // interval) * interval, second=0, microsecond=0)
+
+    try:
+        if slot != _last_sample_slot:
+            for meter in meters:
+                if meter["kwh"] is None and meter["kwh_t1"] is None and meter["kwh_t2"] is None:
+                    continue
+                storage.write_sample(now, meter)
+            _last_sample_slot = slot
+        if _last_finalize_day != now.date():
+            storage.finalize_days([meter["id"] for meter in METER_CONFIG])
+            _last_finalize_day = now.date()
+        _storage_state = {"ok": True, "error": None, "lastSample": now.strftime("%Y-%m-%d %H:%M:%S")}
+    except storage.StorageError as exc:
+        _storage_state = {"ok": False, "error": str(exc)}
 
 
 def _build_snapshot(meters: list[dict]) -> dict:
@@ -431,7 +477,7 @@ def _build_snapshot(meters: list[dict]) -> dict:
 
     return {
         "updated": now.strftime("%d %b %Y %H:%M:%S"),
-        "status": "online" if online_count == len(meters) else "offline",
+        "status": "online" if online_count else "offline",
         "onlineCount": online_count,
         "meterCount": len(meters),
         "totals": totals,
@@ -439,6 +485,13 @@ def _build_snapshot(meters: list[dict]) -> dict:
         "history": list(_history),
         "alarms": [],
         "dr134": {"host": _active_host(), "port": MODBUS_PORT, "error": _last_error},
+        "storage": {
+            "host": storage.DB_HOST,
+            "port": storage.DB_PORT,
+            "database": storage.DB_NAME,
+            "sampleMinutes": storage.SAMPLE_MINUTES,
+            **_storage_state,
+        },
     }
 
 
@@ -451,11 +504,18 @@ def _current_snapshot() -> dict:
         "status": "connecting",
         "onlineCount": 0,
         "meterCount": len(METER_CONFIG),
-        "totals": {"kw": None, "kva": None, "kwh": None, "kwh_t1": None, "kwh_t2": None, "voltage": None, "pf": None},
+        "totals": {"kw": None, "kva": None, "kwh": None, "kwh_t1": None, "kwh_t2": None, "pf": None},
         "machines": [_empty_meter(meter, "Menunggu pembacaan pertama ...") for meter in METER_CONFIG],
         "history": [],
         "alarms": [],
         "dr134": {"host": MANUAL_HOST, "port": MODBUS_PORT, "error": None},
+        "storage": {
+            "host": storage.DB_HOST,
+            "port": storage.DB_PORT,
+            "database": storage.DB_NAME,
+            "sampleMinutes": storage.SAMPLE_MINUTES,
+            **_storage_state,
+        },
     }
 
 
@@ -463,21 +523,29 @@ def _poll_loop() -> None:
     global _latest
     while True:
         try:
-            snapshot = _build_snapshot(_poll_all_meters())
+            meters = _poll_all_meters()
+            snapshot = _build_snapshot(meters)
         except Exception:  # keep the poller alive whatever the meter does
             app.logger.exception("Polling meter gagal.")
         else:
             with _state_lock:
                 _latest = snapshot
+            _record_history(meters)
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
 def start_poller() -> None:
-    global _poller_started
+    global _poller_started, _storage_state
     with _poller_lock:
         if _poller_started:
             return
         _poller_started = True
+    try:
+        storage.init_schema()
+        _storage_state = {"ok": True, "error": None}
+    except storage.StorageError as exc:
+        app.logger.error("Database tidak siap, riwayat tidak dicatat: %s", exc)
+        _storage_state = {"ok": False, "error": str(exc)}
     threading.Thread(target=_poll_loop, name="meter-poller", daemon=True).start()
 
 
@@ -528,8 +596,40 @@ def discover():
     })
 
 
+def _report_args() -> tuple[int, int]:
+    today = datetime.now()
+    year = request.args.get("year", type=int) or today.year
+    month = request.args.get("month", type=int) or today.month
+    return year, min(max(month, 1), 12)
+
+
+@app.route("/api/report")
+def report_data():
+    year, month = _report_args()
+    try:
+        return jsonify(reporting.build_report(year, month, METER_CONFIG))
+    except storage.StorageError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@app.route("/report.xlsx")
+def report_excel():
+    year, month = _report_args()
+    try:
+        data = reporting.build_report(year, month, METER_CONFIG)
+        stream = reporting.build_workbook(data)
+    except storage.StorageError as exc:
+        return jsonify({"error": str(exc)}), 503
+    return send_file(
+        stream,
+        as_attachment=True,
+        download_name=f"kwh-{year}-{month:02d}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 if __name__ == "__main__":
     # Poll in the background so web requests never block on the meter.
     start_poller()
     # Disable the reloader so it does not create duplicate polling processes.
-    app.run(debug=False, use_reloader=False, host="127.0.0.1", port=5000)
+    app.run(debug=False, use_reloader=False, host=storage.DASHBOARD_HOST, port=storage.DASHBOARD_PORT)

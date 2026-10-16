@@ -104,6 +104,8 @@ body[data-theme="dark"] .merror{background:#3a2027;border-color:#6d3a44;color:#f
 /* Offline indicators */
 #statusDot.is-offline{background:#e64b4b}
 #systemStatus.is-offline{color:#e64b4b}
+#systemStatus.is-online{color:#159253}
+body[data-theme="dark"] #systemStatus.is-online{color:#72d69c}
 #dataState.is-error{background:#fdecec;border-color:#f2b8b8;color:#9b2c2c}
 body[data-theme="dark"] .status-offline,body[data-theme="dark"] .online-dot.is-offline,body[data-theme="dark"] #systemStatus.is-offline{color:#ff7b7b}
 body[data-theme="dark"] #statusDot.is-offline{background:#ff7b7b}
@@ -112,6 +114,9 @@ body[data-theme="dark"] .online-text.is-offline{color:#ff7b7b!important}
 
 /* Seven KPI cards (energy tariffs added): fill the row and wrap evenly */
 .kpis{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+/* Label on top, value pinned to the bottom, so a two-line label such as
+   "AVERAGE POWER FACTOR" no longer pushes its value out of line. */
+.kpis article{display:flex;flex-direction:column;justify-content:space-between}
 @media(max-width:800px){.kpis{grid-template-columns:repeat(2,1fr)}}
 
 /* Seven items per row now: machine detail KPIs and machine card values */
@@ -120,3 +125,20 @@ body[data-theme="dark"] .online-text.is-offline{color:#ff7b7b!important}
 .detail-kpis b{font-size:16px;margin-top:5px}
 .values{gap:8px 10px;margin-top:10px}
 @media(max-width:800px){.detail-kpis{grid-template-columns:repeat(2,1fr)}}
+
+/* Reports */
+.report-toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 16px;margin-bottom:10px}
+.report-toolbar label{font-size:10px;color:#718792;display:flex;align-items:center;gap:6px;letter-spacing:.4px}
+.report-toolbar select{font:inherit;font-size:11px;padding:5px 8px;border:1px solid #b9c8d1;border-radius:3px;background:#f2f6f8;color:#29495c}
+.report-toolbar a{text-decoration:none;display:inline-block}
+.report-check{text-transform:none}
+.report-chart-box{height:320px;padding:12px}
+.report-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.report-card b{font-size:22px}
+.report-day-missing{color:#9aa7b0}
+.report-status-partial{color:#c9860a}
+.report-status-missing{color:#9aa7b0}
+body[data-theme="dark"] .report-toolbar select{background:#263746;border-color:#4a6072;color:#d9e8f4}
+body[data-theme="dark"] .report-status-partial{color:#ffb454}
+body[data-theme="dark"] .report-day-missing,body[data-theme="dark"] .report-status-missing{color:#7f909c}
+@media(max-width:800px){.report-grid{grid-template-columns:1fr}.report-chart-box{height:240px}}
