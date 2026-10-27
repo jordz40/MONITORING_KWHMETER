@@ -108,16 +108,22 @@ Then copy config.ini.example to config.ini and fill in the password. config.ini
 is gitignored, so credentials never get committed. The tables are created
 automatically on start:
 
-    samples  one row per meter every sample_minutes (default 15), kept forever
+    samples  one row per meter every sample_minutes (default 1), kept forever
     daily    one row per day per meter; this is what the reports read
     meta     bookkeeping, e.g. how far the daily rollup has run
 
-Polling writes a reading only when the counters change hands to a new 15-minute
-slot, and the daily rollup runs once a day. A day is marked "sebagian" (partial)
-when the readings do not bracket midnight closely, and "tanpa data" when there
-was no reading at all - numbers are never invented. Because the meter only
-stores a running total, a day cannot be reconstructed after the fact, so the
-program should run 24/7 (see below).
+Polling writes a reading only when the counters change hands to a new
+sample_minutes slot, and the daily rollup runs once a day. By default a
+reporting day is the calendar date (00:00-24:00). Set day_end_hour = 22 in
+config.ini to follow the tariff cycle instead: the day then runs 22:00 -> 22:00
+and is labelled with the date it closes on, so one row holds a full LWBP + WBP
+cycle. Changing day_end_hour rebuilds the daily table automatically.
+
+A day is marked "sebagian" (partial) when the readings do not bracket its edges
+closely, and "tanpa data" when there was no reading at all - numbers are never
+invented. Meters that are not installed yet are ignored when judging a day.
+Because the meter only stores a running total, a day cannot be reconstructed
+after the fact, so the program should run 24/7 (see below).
 
 Reports
 -------
@@ -127,6 +133,28 @@ Open the Reports tab: pick a month and a year to see the daily kWh per machine
 downloads an .xlsx with three sheets: Harian per Mesin, Rincian Tarif and
 Ringkasan Bulanan. The same data is available as JSON at
 /api/report?year=2026&month=10 and as a file at /report.xlsx.
+
+Load profile
+------------
+The Load Profile tab answers "at what hours is the load high?". Pick a date and
+a machine (or "Semua mesin") to chart the average power of every hour, see the
+per-hour table with its data coverage and the three busiest hours. Below it a
+monthly heatmap shows one row per day and 24 columns, so the pattern of a whole
+month is visible at a glance.
+
+Power is never stored directly: it is derived from the cumulative kWh counters
+(kW = dkWh / hours), which also keeps the older 15-minute samples usable next to
+the newer one-minute ones. An interval longer than 30 minutes is treated as a
+gap and skipped, never spread over time that was not measured.
+
+"Ekspor Excel" downloads an .xlsx with two sheets: Beban per Jam (24 rows plus
+the peak, peak hour and daily total) and Heatmap Bulanan (one row per day with a
+colour scale). The file follows the date, machine, month and year selected on
+the page, and is also available directly at
+/profile.xlsx?date=2026-10-17&meter=all&year=2026&month=10.
+
+JSON: /api/profile?date=2026-10-17&meter=all and
+/api/profile/month?year=2026&month=10
 
 Run
 ---

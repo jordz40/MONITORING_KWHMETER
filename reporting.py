@@ -11,6 +11,7 @@ from datetime import date
 from io import BytesIO
 
 from openpyxl import Workbook
+from openpyxl.formatting.rule import ColorScaleRule
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -29,6 +30,10 @@ def month_bounds(year: int, month: int) -> tuple[date, date]:
 def _sum(values: list[float | None]) -> float | None:
     numbers = [value for value in values if value is not None]
     return sum(numbers) if numbers else None
+
+
+def _has_data(value: dict) -> bool:
+    return value["kwh"] is not None or value["t1"] is not None or value["t2"] is not None
 
 
 def _meter_totals(rows: list[dict]) -> dict:
@@ -67,10 +72,14 @@ def build_report(year: int, month: int, meters: list[dict]) -> dict:
         t2 = _sum([value["t2"] for value in day_meters.values()])
         t1t2 = (t1 + t2) if (t1 is not None and t2 is not None) else None
 
-        if not per_meter:
+        # A meter that is not installed yet reports nothing at all; that must
+        # not mark the whole day as partial. Only judge the meters that have
+        # readings, and call the day missing when none of them has any.
+        with_data = [value for value in day_meters.values() if _has_data(value)]
+        if not with_data:
             status = "missing"
             missing_days.append(day.day)
-        elif any(not value["complete"] for value in per_meter.values()):
+        elif any(not value["complete"] for value in with_data):
             status = "partial"
             partial_days.append(day.day)
         else:
@@ -192,6 +201,77 @@ def build_workbook(report: dict) -> BytesIO:
         for index, column in enumerate(ws.iter_cols(min_row=1, max_row=1), start=1):
             width = max(len(str(cell.value or "")) for cell in column) + 4
             ws.column_dimensions[get_column_letter(index)].width = max(12, min(width, 26))
+
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    return stream
+
+
+def _style_header_row(sheet, values: list[str], row: int) -> None:
+    for index, value in enumerate(values, start=1):
+        cell = sheet.cell(row=row, column=index, value=value)
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = Alignment(horizontal="center")
+
+
+def build_profile_workbook(profile: dict, heatmap: dict) -> BytesIO:
+    """Two sheets: the hourly load profile and the monthly heatmap."""
+    workbook = Workbook()
+    scope = "Total pabrik" if profile["selection"] == "all" else profile["selection"]
+
+    daily = workbook.active
+    daily.title = "Beban per Jam"
+    daily.append([f"PROFIL BEBAN — {profile['date']} — {scope}"])
+    daily["A1"].font = Font(bold=True, size=12)
+    daily.append(["Beban puncak (kW)", profile["peakKw"]])
+    daily.append(["Jam terpuncak",
+                  f"{profile['peakHour']:02d}:00" if profile["peakHour"] is not None else "-"])
+    daily.append(["Total energi (kWh)", round(profile["totalKwh"], 3)])
+    daily.append([])
+
+    header_row = daily.max_row + 1
+    _style_header_row(daily, ["Jam", "Rata-rata kW", "Energi (kWh)", "Cakupan (menit)", "Status"], header_row)
+    for hour in profile["hours"]:
+        daily.append([hour["label"], hour["kw"], hour["kwh"], hour["coveredMinutes"],
+                      _STATUS_LABEL[hour["status"]]])
+    for row in daily.iter_rows(min_row=header_row + 1, max_row=daily.max_row, min_col=2, max_col=3):
+        for cell in row:
+            cell.number_format = "0.00"
+    daily.column_dimensions["A"].width = 8
+    for column in "BCDE":
+        daily.column_dimensions[column].width = 16
+    daily.freeze_panes = f"A{header_row + 1}"
+
+    heat = workbook.create_sheet("Heatmap Bulanan")
+    heat.append([f"HEATMAP BEBAN — {calendar.month_name[heatmap['month']]} {heatmap['year']} — {scope}"])
+    heat["A1"].font = Font(bold=True, size=12)
+    heat.append([])
+    header_row = heat.max_row + 1
+    _style_header_row(heat, ["Tgl"] + [f"{hour:02d}" for hour in range(24)] + ["Total kWh"], header_row)
+
+    for day in heatmap["days"]:
+        heat.append([day["day"]]
+                    + [None if value is None else round(value, 2) for value in day["hours"]]
+                    + [round(day["totalKwh"], 2)])
+
+    first = header_row + 1
+    last = header_row + len(heatmap["days"])
+    if last >= first:
+        heat.conditional_formatting.add(
+            f"B{first}:Y{last}",
+            ColorScaleRule(start_type="num", start_value=0, start_color="FFFFFF",
+                           end_type="num", end_value=max(heatmap["maxKw"], 0.001), end_color="168EC8"),
+        )
+    for row in heat.iter_rows(min_row=first, max_row=last, min_col=2, max_col=26):
+        for cell in row:
+            cell.number_format = "0.0"
+    heat.column_dimensions["A"].width = 6
+    for column in range(2, 26):
+        heat.column_dimensions[get_column_letter(column)].width = 5
+    heat.column_dimensions["Z"].width = 12
+    heat.freeze_panes = f"B{first}"
 
     stream = BytesIO()
     workbook.save(stream)

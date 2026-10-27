@@ -61,9 +61,43 @@ DASHBOARD_HOST = _setting("KWH_DASHBOARD_HOST", "dashboard", "host", "127.0.0.1"
 DASHBOARD_PORT = int(_setting("KWH_DASHBOARD_PORT", "dashboard", "port", "5000"))
 SAMPLE_MINUTES = int(_setting("KWH_SAMPLE_MINUTES", "history", "sample_minutes", "15"))
 
+# A reporting day ends at this hour, not at midnight: the tariff cycle runs
+# 22:00 -> 22:00 (LWBP from 22:00 to 18:00, WBP from 18:00 to 22:00), so one
+# LWBP+WBP cycle fits inside a single row. The row is labelled with the date
+# the day closes on: day "17 Oct" covers 16 Oct 22:00 -> 17 Oct 22:00.
+DAY_END_HOUR = int(_setting("KWH_DAY_END_HOUR", "history", "day_end_hour", "22"))
+
 # A day is trusted only when the readings that bracket it sit this close to the
-# midnight edges. Two sampling intervals leaves room for one missed sample.
-COMPLETE_TOLERANCE = timedelta(minutes=2 * SAMPLE_MINUTES)
+# day edges. Allow roughly two sampling intervals, with a floor so that sampling
+# every minute does not turn a couple of missed polls into a "partial" day.
+COMPLETE_TOLERANCE = max(timedelta(minutes=2 * SAMPLE_MINUTES), timedelta(minutes=15))
+
+
+def _window(day: date) -> tuple[datetime, datetime]:
+    """Start and end of the reporting day labelled `day`.
+
+    With day_end_hour = 0 the day is simply the calendar date. With a closing
+    hour such as 22 the day is the 24 hours ending at that hour, labelled with
+    the date it closes on, so one row holds a complete LWBP + WBP cycle.
+    """
+    if DAY_END_HOUR == 0:
+        start = datetime.combine(day, time.min)
+        return start, start + timedelta(days=1)
+    end = datetime.combine(day, time(hour=DAY_END_HOUR))
+    return end - timedelta(days=1), end
+
+
+def _cycle_day(moment: datetime) -> date:
+    """The reporting day a timestamp belongs to."""
+    if DAY_END_HOUR == 0:
+        return moment.date()
+    day = moment.date()
+    return day if moment.time() < time(hour=DAY_END_HOUR) else day + timedelta(days=1)
+
+
+def day_window(day: date) -> tuple[datetime, datetime]:
+    """Public helper: start and end of the reporting day labelled `day`."""
+    return _window(day)
 
 _SCHEMA = (
     """
@@ -144,6 +178,7 @@ def status() -> dict:
         "samples": samples,
         "days": days,
         "sampleMinutes": SAMPLE_MINUTES,
+        "dayEndHour": DAY_END_HOUR,
     }
 
 
@@ -178,18 +213,29 @@ def _difference(end: float | None, start: float | None) -> float | None:
     return end - start
 
 
-def _readings(cur, meter_id: str, from_day: date, to_day: date) -> list[dict]:
+def _readings(cur, meter_id: str, first_day: date, last_day: date) -> list[dict]:
+    """Readings covering the whole cycle of first_day through last_day."""
     cur.execute(
         "SELECT ts, kwh, kwh_t1, kwh_t2 FROM samples "
         "WHERE meter_id = %s AND ts >= %s AND ts < %s ORDER BY ts",
-        (meter_id, datetime.combine(from_day, time.min), datetime.combine(to_day, time.min)),
+        (meter_id, _window(first_day)[0], _window(last_day)[1]),
     )
     return cur.fetchall()
 
 
+def _sync_boundary_setting(cur) -> None:
+    """Rebuild the daily table when the day-end hour changes."""
+    stored = _meta_get(cur, "day_end_hour")
+    if stored == str(DAY_END_HOUR):
+        return
+    cur.execute("DELETE FROM daily")
+    cur.execute("DELETE FROM meta WHERE k = 'last_finalized_day'")
+    _meta_set(cur, "day_end_hour", str(DAY_END_HOUR))
+
+
 def _write_days(cur, meter_id: str, first_day: date, last_day: date, readings: list[dict]) -> None:
     def last_at_or_before(moment: datetime) -> dict | None:
-        # A sample sitting exactly on midnight is that day's opening reading.
+        # A sample sitting exactly on the boundary is the day's opening reading.
         found = None
         for row in readings:
             if row["ts"] <= moment:
@@ -209,8 +255,7 @@ def _write_days(cur, meter_id: str, first_day: date, last_day: date, readings: l
 
     day = first_day
     while day <= last_day:
-        day_start = datetime.combine(day, time.min)
-        day_end = day_start + timedelta(days=1)
+        day_start, day_end = _window(day)
         start = last_at_or_before(day_start)
         end = last_within(day_start, day_end)
 
@@ -237,36 +282,38 @@ def _write_days(cur, meter_id: str, first_day: date, last_day: date, readings: l
 
 
 def finalize_days(meter_ids: list[str], today: date | None = None) -> int:
-    """Roll samples up into the daily table for every day before today.
+    """Roll samples up into the daily table for every day that has closed.
 
-    Returns how many days were finalised. Safe to call again: already written
-    days are simply recomputed for the meters that are configured.
+    A day closes at DAY_END_HOUR, so "today" here means the cycle that is still
+    running. Returns how many days were finalised; safe to call repeatedly.
     """
-    today = today or datetime.now().date()
-    yesterday = today - timedelta(days=1)
+    running_day = today or _cycle_day(datetime.now())
+    last_closed = running_day - timedelta(days=1)
     written = 0
 
     with connect() as conn:
         with conn.cursor() as cur:
+            _sync_boundary_setting(cur)
+
             marker = _meta_get(cur, "last_finalized_day")
             if marker is None:
                 cur.execute("SELECT MIN(ts) AS first_ts FROM samples")
                 first_ts = cur.fetchone()["first_ts"]
                 # Start one day before the first sample so that day becomes the
                 # baseline for the first full day of data.
-                start = (first_ts.date() - timedelta(days=1)) if first_ts else yesterday
+                start = (_cycle_day(first_ts) - timedelta(days=1)) if first_ts else last_closed
                 _meta_set(cur, "last_finalized_day", start.isoformat())
                 return 0
 
             first_day = date.fromisoformat(marker) + timedelta(days=1)
-            if first_day > yesterday:
+            if first_day > last_closed:
                 return 0
 
             for meter_id in meter_ids:
-                readings = _readings(cur, meter_id, date.fromisoformat(marker), today)
-                _write_days(cur, meter_id, first_day, yesterday, readings)
-            written = (yesterday - first_day).days + 1
-            _meta_set(cur, "last_finalized_day", yesterday.isoformat())
+                readings = _readings(cur, meter_id, first_day, last_closed)
+                _write_days(cur, meter_id, first_day, last_closed, readings)
+            written = (last_closed - first_day).days + 1
+            _meta_set(cur, "last_finalized_day", last_closed.isoformat())
 
     return written
 
@@ -279,5 +326,21 @@ def daily_rows(first_day: date, last_day: date) -> list[dict]:
                 "SELECT day, meter_id, kwh, kwh_t1, kwh_t2, complete FROM daily "
                 "WHERE day >= %s AND day <= %s ORDER BY day, meter_id",
                 (first_day, last_day),
+            )
+            return cur.fetchall()
+
+
+def readings_between(first: datetime, last: datetime, meter_ids: list[str]) -> list[dict]:
+    """Cumulative counters in [first, last), ordered per meter by time."""
+    if not meter_ids:
+        return []
+    placeholders = ",".join(["%s"] * len(meter_ids))
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT meter_id, ts, kwh FROM samples "
+                f"WHERE ts >= %s AND ts < %s AND meter_id IN ({placeholders}) "
+                "ORDER BY meter_id, ts",
+                (first, last, *meter_ids),
             )
             return cur.fetchall()

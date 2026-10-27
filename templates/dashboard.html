@@ -21,6 +21,7 @@
     <a class="active" data-view="overview">▦　Overview</a>
     <a data-view="measurements">◫　Measurements</a>
     <a data-view="trends">⌁　Trends</a>
+    <a data-view="profile">▥　Load Profile</a>
     <a data-view="alarms">!　Alarms &amp; Events <strong id="alarmCount">0</strong></a>
     <a data-view="reports">▤　Reports</a>
     <a data-view="settings">⚙　Settings</a>
@@ -70,6 +71,49 @@
   <section id="view-trends" class="app-view">
     <div class="pagehead"><div><h1>TRENDS</h1><small>Power monitoring trend</small></div><span class="live">● LIVE DATA · DR134</span></div>
     <section class="panel big-trend"><div class="panel-title">⌁ FACTORY POWER TREND <small>Active and apparent power</small></div><div class="big-chart"><canvas id="trendChart"></canvas></div></section>
+  </section>
+
+  <section id="view-profile" class="app-view">
+    <div class="pagehead">
+      <div><h1>LOAD PROFILE</h1><small>Rata-rata beban per jam, dihitung dari selisih counter kWh</small></div>
+      <span class="live" id="profileState">● --</span>
+    </div>
+
+    <section class="panel report-toolbar">
+      <label>Tanggal <input type="date" id="profileDate"></label>
+      <label>Mesin <select id="profileMeter"></select></label>
+      <button type="button" id="profileReload" class="theme-toggle">⟳ Muat ulang</button>
+      <a id="profileExport" class="theme-toggle" href="/profile.xlsx">⬇ Ekspor Excel</a>
+    </section>
+
+    <section class="report-grid">
+      <div class="panel report-card"><small>BEBAN PUNCAK</small><b id="profilePeak">--</b><span>kW</span></div>
+      <div class="panel report-card"><small>JAM TERPUNCAK</small><b id="profilePeakHour">--</b><span></span></div>
+      <div class="panel report-card"><small>ENERGI HARI</small><b id="profileKwh">--</b><span>kWh</span></div>
+      <div class="panel report-card"><small>JAM BERDATA</small><b id="profileHours">--</b><span>dari 24</span></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">▤ BEBAN PER JAM <small id="profileSub">—</small></div>
+      <div class="report-chart-box"><canvas id="profileChart"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">▤ TABEL PER JAM <small>Rata-rata kW, energi, dan cakupan data</small></div>
+      <div class="table-wrap" id="profileTableWrap"></div>
+    </section>
+
+    <section class="panel report-toolbar">
+      <label>Bulan <select id="profileMonth"></select></label>
+      <label>Tahun <select id="profileYear"></select></label>
+      <button type="button" id="heatmapReload" class="theme-toggle">⟳ Muat heatmap</button>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">▤ HEATMAP BULANAN <small id="heatmapSub">—</small></div>
+      <div class="table-wrap" id="heatmapWrap"></div>
+      <p class="heatmap-legend">Makin terang warnanya, makin tinggi rata-rata kW pada jam itu. Tanda “–” berarti tidak ada data.</p>
+    </section>
   </section>
 
   <section id="view-alarms" class="app-view">
@@ -126,6 +170,7 @@
       <div><span>Data source</span><b>LIVE METER DATA</b></div>
       <div><span>Database</span><b id="settingsDb">--</b></div>
       <div><span>Riwayat terakhir</span><b id="settingsLastSample">--</b></div>
+      <div><span>Siklus hari</span><b id="settingsDayCycle">--</b></div>
       <div><span>Last error</span><b id="settingsError">--</b></div>
     </section>
     <section class="panel report-note">
@@ -155,6 +200,9 @@
       <div><small>ACTIVE ENERGY</small><b id="dKwh">--</b><span>kWh</span></div>
       <div><small>ENERGY TARIFF 1</small><b id="dKwhT1">--</b><span>kWh</span></div>
       <div><small>ENERGY TARIFF 2</small><b id="dKwhT2">--</b><span>kWh</span></div>
+      <div><small>ARUS R (L1)</small><b id="dIr">--</b><span>A</span></div>
+      <div><small>ARUS S (L2)</small><b id="dIs">--</b><span>A</span></div>
+      <div><small>ARUS T (L3)</small><b id="dIt">--</b><span>A</span></div>
     </div>
     <div class="detail-grid">
       <section class="detail-panel">
@@ -206,6 +254,7 @@ const trendChart = new Chart(document.getElementById('trendChart'), {
 
 let machineChart = null;
 let reportChart = null;
+let profileChart = null;
 let latestData = null;
 let currentMachineId = null;
 const machineSeries = {};
@@ -220,7 +269,7 @@ function applyChartTheme(c) {
 }
 
 function applyChartThemes() {
-  [chart, trendChart, machineChart, reportChart].forEach(applyChartTheme);
+  [chart, trendChart, machineChart, reportChart, profileChart].forEach(applyChartTheme);
 }
 
 const navLinks = Array.from(document.querySelectorAll('nav a[data-view]'));
@@ -233,6 +282,11 @@ function showView(name) {
   if (name === 'reports') {
     if (reportChart) reportChart.resize();
     loadReport();
+  }
+  if (name === 'profile') {
+    if (profileChart) profileChart.resize();
+    loadProfile();
+    loadHeatmap();
   }
 }
 navLinks.forEach(a => a.addEventListener('click', e => {
@@ -271,6 +325,9 @@ function updateMachineDetail() {
   document.getElementById('dKwh').textContent = fmt(m.kwh);
   document.getElementById('dKwhT1').textContent = fmt(m.kwh_t1);
   document.getElementById('dKwhT2').textContent = fmt(m.kwh_t2);
+  document.getElementById('dIr').textContent = fmt(m.current_r, 2);
+  document.getElementById('dIs').textContent = fmt(m.current_s, 2);
+  document.getElementById('dIt').textContent = fmt(m.current_t, 2);
   document.getElementById('dId').textContent = m.id;
   const detailStatus = document.getElementById('dStatus');
   detailStatus.textContent = m.online ? 'ONLINE' : 'OFFLINE';
@@ -393,6 +450,9 @@ async function refresh() {
   document.getElementById('settingsLastSample').textContent = db.ok
     ? `${db.lastSample || '-'} · setiap ${db.sampleMinutes} menit`
     : `GAGAL — ${db.error || 'tidak diketahui'}`;
+  document.getElementById('settingsDayCycle').textContent = db.dayEndHour === 0
+    ? '00:00 – 24:00 (tanggal kalender)'
+    : `ditutup ${String(db.dayEndHour).padStart(2, '0')}:00 (siklus tarif)`;
 
   d.machines.forEach(m => {
     const arr = machineSeries[m.id] || (machineSeries[m.id] = []);
@@ -521,6 +581,129 @@ reportYearEl.addEventListener('change', loadReport);
 document.getElementById('reportTariffs').addEventListener('change', event => {
   reportTariffPanel.hidden = !event.target.checked;
 });
+
+// --- Load profile ----------------------------------------------------------
+const profileDateEl = document.getElementById('profileDate');
+const profileMeterEl = document.getElementById('profileMeter');
+const profileMonthEl = document.getElementById('profileMonth');
+const profileYearEl = document.getElementById('profileYear');
+const PROFILE_STATUS = {complete: 'lengkap', partial: 'sebagian', missing: 'tanpa data'};
+
+(function initProfileSelectors() {
+  const now = new Date();
+  const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'),
+                 String(now.getDate()).padStart(2, '0')].join('-');
+  profileDateEl.value = today;
+  profileMonthEl.innerHTML = MONTH_NAMES.map((name, index) => `<option value="${index + 1}">${name}</option>`).join('');
+  profileMonthEl.value = now.getMonth() + 1;
+  let years = '';
+  for (let year = now.getFullYear(); year >= now.getFullYear() - 6; year -= 1) {
+    years += `<option value="${year}">${year}</option>`;
+  }
+  profileYearEl.innerHTML = years;
+  profileYearEl.value = now.getFullYear();
+})();
+
+function ensureProfileMeters() {
+  const meters = (latestData && latestData.machines) || [];
+  if (profileMeterEl.options.length !== meters.length + 1) {
+    profileMeterEl.innerHTML = '<option value="all">Semua mesin</option>'
+      + meters.map(m => `<option value="${m.id}">${m.id} — ${m.name}</option>`).join('');
+  }
+}
+
+function renderProfile(data) {
+  document.getElementById('profilePeak').textContent = fmt(data.peakKw);
+  document.getElementById('profilePeakHour').textContent =
+    data.peakHour === null ? '--' : `${String(data.peakHour).padStart(2, '0')}:00`;
+  document.getElementById('profileKwh').textContent = fmt(data.totalKwh);
+  document.getElementById('profileHours').textContent = data.hours.filter(hour => hour.kw !== null).length;
+  document.getElementById('profileSub').textContent =
+    `${data.date} · ${data.selection === 'all' ? 'total pabrik' : data.selection}`;
+
+  if (!profileChart) {
+    profileChart = new Chart(document.getElementById('profileChart'), {
+      type: 'bar',
+      data: {labels: [], datasets: [{label: 'Rata-rata kW', data: [], backgroundColor: '#168ec8'}]},
+      options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
+                scales: {x: {grid: {display: false}}, y: {beginAtZero: true}}}
+    });
+    applyChartTheme(profileChart);
+  }
+  profileChart.data.labels = data.hours.map(hour => hour.label);
+  profileChart.data.datasets[0].data = data.hours.map(hour => hour.kw);
+  profileChart.update('none');
+
+  const rows = data.hours.map(hour =>
+    `<tr><td>${hour.label}</td>`
+    + `<td><b>${reportCell(hour.kw)}</b></td>`
+    + `<td>${reportCell(hour.kwh)}</td>`
+    + `<td>${hour.coveredMinutes} menit</td>`
+    + `<td class="${hour.status === 'complete' ? '' : (hour.status === 'partial' ? 'report-status-partial' : 'report-status-missing')}">`
+    + `${PROFILE_STATUS[hour.status]}</td></tr>`);
+  document.getElementById('profileTableWrap').innerHTML =
+    reportTable(['Jam', 'Rata-rata kW', 'Energi (kWh)', 'Cakupan', 'Status'], rows);
+}
+
+async function loadProfile() {
+  ensureProfileMeters();
+  const state = document.getElementById('profileState');
+  state.textContent = '● memuat ...';
+  const params = new URLSearchParams({date: profileDateEl.value, meter: profileMeterEl.value || 'all'});
+  document.getElementById('profileExport').href =
+    `/profile.xlsx?${params.toString()}&year=${profileYearEl.value}&month=${profileMonthEl.value}`;
+  try {
+    const response = await fetch(`/api/profile?${params.toString()}`);
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    renderProfile(data);
+    state.textContent = data.hasData ? `● ${data.date}` : '● belum ada data';
+  } catch (error) {
+    state.textContent = '● gagal: ' + error.message;
+  }
+}
+
+function renderHeatmap(data) {
+  const summary = data.selection === 'all' ? 'total pabrik' : data.selection;
+  document.getElementById('heatmapSub').textContent = `${MONTH_NAMES[data.month - 1]} ${data.year} · ${summary}`;
+  const max = data.maxKw || 1;
+  const header = ['Tgl', ...Array.from({length: 24}, (_, hour) => String(hour).padStart(2, '0'))];
+  const rows = data.days.map(day => {
+    const cells = day.hours.map((kw, hour) => {
+      if (kw === null || kw === undefined) {
+        return `<td class="hm-cell hm-empty" title="Tgl ${day.day} jam ${String(hour).padStart(2, '0')}:00 — tidak ada data"></td>`;
+      }
+      const ratio = Math.max(0.04, Math.min(1, kw / max));
+      const alpha = (0.12 + 0.88 * ratio).toFixed(2);
+      return `<td class="hm-cell" style="background:rgba(22,142,200,${alpha})"`
+        + ` title="Tgl ${day.day} jam ${String(hour).padStart(2, '0')}:00 — ${kw.toFixed(1)} kW"></td>`;
+    }).join('');
+    return `<tr><td class="hm-day">${String(day.day).padStart(2, '0')}</td>${cells}</tr>`;
+  }).join('');
+  document.getElementById('heatmapWrap').innerHTML =
+    `<table class="heatmap"><thead><tr>${header.map(h => `<th>${h}</th>`).join('')}</tr></thead>`
+    + `<tbody>${rows}</tbody></table>`;
+}
+
+async function loadHeatmap() {
+  const params = new URLSearchParams({year: profileYearEl.value, month: profileMonthEl.value,
+                                      meter: profileMeterEl.value || 'all'});
+  try {
+    const response = await fetch(`/api/profile/month?${params.toString()}`);
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    renderHeatmap(data);
+  } catch (error) {
+    document.getElementById('profileState').textContent = '● gagal: ' + error.message;
+  }
+}
+
+document.getElementById('profileReload').addEventListener('click', loadProfile);
+profileDateEl.addEventListener('change', loadProfile);
+profileMeterEl.addEventListener('change', () => { loadProfile(); loadHeatmap(); });
+document.getElementById('heatmapReload').addEventListener('click', loadHeatmap);
+profileMonthEl.addEventListener('change', loadHeatmap);
+profileYearEl.addEventListener('change', loadHeatmap);
 
 const themeToggle = document.getElementById('themeToggle');
 function applyTheme(theme) {

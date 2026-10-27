@@ -14,6 +14,7 @@ from datetime import date, datetime
 
 from flask import Flask, jsonify, render_template, request, send_file
 
+import load_profile
 import reporting
 import storage
 
@@ -71,6 +72,9 @@ METER_CONFIG = [
 # Float32 is two 16-bit registers, high word first. Modbus Poll shows these as
 # one-based (3026, 3060, ...).
 REGISTER_MAP = {
+    "current_r": 2999,     # Current L1 (R), A
+    "current_s": 3001,     # Current L2 (S), A
+    "current_t": 3003,     # Current L3 (T), A
     "voltage": 3025,       # Average voltage L-L, V
     "kw": 3059,            # Total active power, kW
     "kva": 3075,           # Total apparent power, kVA
@@ -80,12 +84,12 @@ REGISTER_MAP = {
     "kwh_t2": 45121,       # Active energy import rate B (tariff 2), kWh
 }
 
-# The four power/voltage registers sit close together, so read them in one
-# block. One block instead of four requests halves the traffic on the shared
-# RS-485 line and keeps every value from the same frame.
-VALUE_BLOCK_START = 3025
-VALUE_BLOCK_COUNT = 60                        # 3025..3084 (pf is a 2-register float)
-VALUE_KEYS = ("voltage", "kw", "kva", "pf")
+# Currents, voltages, power and power factor all live in one contiguous range,
+# so a single request covers them (FC03 allows up to 125 registers). This keeps
+# the bus traffic at two requests per meter per poll.
+VALUE_BLOCK_START = 2999
+VALUE_BLOCK_COUNT = 86                        # 2999..3084
+VALUE_KEYS = ("current_r", "current_s", "current_t", "voltage", "kw", "kva", "pf")
 VALUE_OFFSETS = {
     key: (REGISTER_MAP[key] - VALUE_BLOCK_START) * 2 for key in VALUE_KEYS
 }
@@ -100,6 +104,11 @@ ENERGY_KEYS = ("kwh", "kwh_t1", "kwh_t2")
 ENERGY_OFFSETS = {
     key: (REGISTER_MAP[key] - ENERGY_BLOCK_START) * 2 for key in ENERGY_KEYS
 }
+
+# 64-bit integer energy counters, in Wh. Some firmware returns NaN for the
+# Float32 copies above but still serves these, so they act as a fallback.
+ENERGY_INT64_ADDRESS = 3203      # total active energy import, 4 registers
+TARIFF_INT64_ADDRESS = 4195      # rate A, 4 registers; rate B follows at 4199
 
 _poll_lock = threading.Lock()
 _host_lock = threading.Lock()
@@ -199,7 +208,8 @@ def _read_meter(sock: socket.socket, meter: dict) -> dict:
     # An unwired slave answers nothing at all, so skip its energy block instead
     # of burning another timeout on it. This keeps polling quick while meters
     # are still being installed.
-    if any(readings[key] is not None for key in VALUE_KEYS):
+    meter_answered = any(readings[key] is not None for key in VALUE_KEYS)
+    if meter_answered:
         time.sleep(MODBUS_REQUEST_DELAY_SECONDS)
         try:
             block = _read_block(sock, meter["slave_id"], ENERGY_BLOCK_START, ENERGY_BLOCK_COUNT)
@@ -208,6 +218,26 @@ def _read_meter(sock: socket.socket, meter: dict) -> dict:
                 readings[key] = value if math.isfinite(value) else None
         except (OSError, ModbusError, struct.error) as exc:
             errors.append(f"energi: {exc}")
+
+    # Some firmware answers NaN for the Float32 energy copies above (the
+    # Extruder meter does). The 64-bit Wh counters hold the same totals, so
+    # fill in anything that is still missing from them.
+    if meter_answered and readings["kwh"] is None:
+        try:
+            raw = _read_block(sock, meter["slave_id"], ENERGY_INT64_ADDRESS, 4)
+            readings["kwh"] = struct.unpack(">q", raw[:8])[0] / 1000.0
+        except (OSError, ModbusError, struct.error) as exc:
+            errors.append(f"energi 64-bit: {exc}")
+
+    if meter_answered and (readings["kwh_t1"] is None or readings["kwh_t2"] is None):
+        try:
+            raw = _read_block(sock, meter["slave_id"], TARIFF_INT64_ADDRESS, 8)
+            if readings["kwh_t1"] is None:
+                readings["kwh_t1"] = struct.unpack(">q", raw[0:8])[0] / 1000.0
+            if readings["kwh_t2"] is None:
+                readings["kwh_t2"] = struct.unpack(">q", raw[8:16])[0] / 1000.0
+        except (OSError, ModbusError, struct.error) as exc:
+            errors.append(f"tarif 64-bit: {exc}")
 
     online = any(value is not None for value in readings.values())
     return {**meter, **readings, "online": online, "error": "; ".join(errors) or None}
@@ -490,6 +520,7 @@ def _build_snapshot(meters: list[dict]) -> dict:
             "port": storage.DB_PORT,
             "database": storage.DB_NAME,
             "sampleMinutes": storage.SAMPLE_MINUTES,
+            "dayEndHour": storage.DAY_END_HOUR,
             **_storage_state,
         },
     }
@@ -514,6 +545,7 @@ def _current_snapshot() -> dict:
             "port": storage.DB_PORT,
             "database": storage.DB_NAME,
             "sampleMinutes": storage.SAMPLE_MINUTES,
+            "dayEndHour": storage.DAY_END_HOUR,
             **_storage_state,
         },
     }
@@ -624,6 +656,72 @@ def report_excel():
         stream,
         as_attachment=True,
         download_name=f"kwh-{year}-{month:02d}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def _selected_meter(raw: str | None) -> str:
+    meter_id = (raw or "all").strip()
+    known = {meter["id"] for meter in METER_CONFIG}
+    return meter_id if (meter_id == "all" or meter_id in known) else "all"
+
+
+def _profile_date(raw: str | None) -> date:
+    if raw:
+        try:
+            return date.fromisoformat(raw)
+        except ValueError:
+            pass
+    return datetime.now().date()
+
+
+@app.route("/api/profile")
+def profile_data():
+    """Average power per hour for one reporting day."""
+    try:
+        result = load_profile.hourly_profile(
+            _profile_date(request.args.get("date")),
+            METER_CONFIG,
+            _selected_meter(request.args.get("meter")),
+        )
+    except storage.StorageError as exc:
+        return jsonify({"error": str(exc)}), 503
+    return jsonify(result)
+
+
+@app.route("/api/profile/month")
+def profile_month():
+    """Monthly heatmap: one row per day, 24 hourly kilowatt values."""
+    today = datetime.now()
+    year = request.args.get("year", type=int) or today.year
+    month = min(max(request.args.get("month", type=int) or today.month, 1), 12)
+    try:
+        result = load_profile.monthly_heatmap(
+            year, month, METER_CONFIG, _selected_meter(request.args.get("meter"))
+        )
+    except storage.StorageError as exc:
+        return jsonify({"error": str(exc)}), 503
+    return jsonify(result)
+
+
+@app.route("/profile.xlsx")
+def profile_excel():
+    """Workbook with the hourly profile and the monthly heatmap."""
+    day = _profile_date(request.args.get("date"))
+    meter = _selected_meter(request.args.get("meter"))
+    today = datetime.now()
+    year = request.args.get("year", type=int) or today.year
+    month = min(max(request.args.get("month", type=int) or today.month, 1), 12)
+    try:
+        profile = load_profile.hourly_profile(day, METER_CONFIG, meter)
+        heatmap = load_profile.monthly_heatmap(year, month, METER_CONFIG, meter)
+        stream = reporting.build_profile_workbook(profile, heatmap)
+    except storage.StorageError as exc:
+        return jsonify({"error": str(exc)}), 503
+    return send_file(
+        stream,
+        as_attachment=True,
+        download_name=f"load-profile-{day.isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 

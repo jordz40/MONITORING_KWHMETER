@@ -119,8 +119,8 @@ body[data-theme="dark"] .online-text.is-offline{color:#ff7b7b!important}
 .kpis article{display:flex;flex-direction:column;justify-content:space-between}
 @media(max-width:800px){.kpis{grid-template-columns:repeat(2,1fr)}}
 
-/* Seven items per row now: machine detail KPIs and machine card values */
-.detail-kpis{grid-template-columns:repeat(7,1fr);gap:6px;padding:10px}
+/* Machine detail: ten boxes in two tidy rows of five */
+.detail-kpis{grid-template-columns:repeat(5,1fr);gap:6px;padding:10px}
 .detail-kpis>div{padding:10px 8px}
 .detail-kpis b{font-size:16px;margin-top:5px}
 .values{gap:8px 10px;margin-top:10px}
@@ -142,3 +142,19 @@ body[data-theme="dark"] .report-toolbar select{background:#263746;border-color:#
 body[data-theme="dark"] .report-status-partial{color:#ffb454}
 body[data-theme="dark"] .report-day-missing,body[data-theme="dark"] .report-status-missing{color:#7f909c}
 @media(max-width:800px){.report-grid{grid-template-columns:1fr}.report-chart-box{height:240px}}
+
+/* Load profile */
+.report-toolbar input[type="date"]{font:inherit;font-size:11px;padding:4px 6px;border:1px solid #b9c8d1;border-radius:3px;background:#f2f6f8;color:#29495c}
+body[data-theme="dark"] .report-toolbar input[type="date"]{background:#263746;border-color:#4a6072;color:#d9e8f4;color-scheme:dark}
+.heatmap{width:100%;border-collapse:collapse}
+.heatmap th{padding:5px 2px;font-size:8px;color:#718792;background:#f8fafb;border:1px solid #e3eaee;text-align:center}
+.heatmap td{border:1px solid #e3eaee;padding:0}
+.heatmap .hm-day{background:#f8fafb;color:#38576b;font-weight:bold;font-size:9px;padding:2px 6px;text-align:center}
+.heatmap .hm-cell{min-width:24px;height:16px;cursor:help}
+.heatmap .hm-empty{background:#eef3f6}
+body[data-theme="dark"] .heatmap th{background:#202d38;color:#a5b5c2;border-color:#344555}
+body[data-theme="dark"] .heatmap td{border-color:#2b3a48}
+body[data-theme="dark"] .heatmap .hm-day{background:#202d38;color:#d2dee8}
+body[data-theme="dark"] .heatmap .hm-empty{background:#1a2631}
+.heatmap-legend{margin:0;padding:8px 16px 14px;font-size:9px;color:#718792}
+body[data-theme="dark"] .heatmap-legend{color:#9aabba}

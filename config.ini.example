@@ -18,4 +18,9 @@ port = 40000
 
 [history]
 ; Seberapa sering counter kWh dicatat ke database (menit).
-sample_minutes = 15
+; 1 = profil beban per jam jadi lebih halus (±158 MB/tahun untuk 5 meter).
+sample_minutes = 1
+; Jam penutupan hari laporan:
+;   0  = hari kalender biasa (00:00 - 24:00)
+;   22 = siklus tarif (22:00 hari sebelumnya s/d 22:00 hari itu)
+day_end_hour = 0
