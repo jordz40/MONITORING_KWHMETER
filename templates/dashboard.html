@@ -492,6 +492,15 @@ const reportTariffPanel = document.getElementById('reportTariffPanel');
 const STATUS_TEXT = {complete: 'lengkap', partial: 'sebagian', missing: 'tanpa data'};
 const STATUS_CLASS = {complete: '', partial: 'report-status-partial', missing: 'report-status-missing'};
 
+function dayStatus(day, value) {
+  const base = STATUS_TEXT[day.status];
+  const coverage = (value && value.coverage) || day.coverage;
+  if (day.status === 'partial' && coverage) {
+    return `${base} · ${coverage}`;
+  }
+  return base;
+}
+
 (function fillReportSelectors() {
   const now = new Date();
   reportMonthEl.innerHTML = MONTH_NAMES.map((name, index) => `<option value="${index + 1}">${name}</option>`).join('');
@@ -540,7 +549,7 @@ function renderReport(data) {
     `<tr><td>${d.dayNumber}</td>`
     + data.meters.map(m => `<td>${reportCell(d.meters[m.id].kwh)}</td>`).join('')
     + `<td><b>${reportCell(d.total.kwh)}</b></td>`
-    + `<td class="${STATUS_CLASS[d.status]}">${STATUS_TEXT[d.status]}</td></tr>`);
+    + `<td class="${STATUS_CLASS[d.status]}">${dayStatus(d)}</td></tr>`);
   document.getElementById('reportTableWrap').innerHTML =
     reportTable(['Tanggal', ...data.meters.map(m => m.id), 'TOTAL kWh', 'Status'], recapRows);
 
@@ -552,7 +561,7 @@ function renderReport(data) {
     tariffRows.push(`<tr><td>${d.dayNumber}</td><td>${m.id}</td>`
       + `<td>${reportCell(value.t1)}</td><td>${reportCell(value.t2)}</td><td>${reportCell(t1t2)}</td>`
       + `<td>${reportCell(value.kwh)}</td><td>${reportCell(diff)}</td>`
-      + `<td class="${STATUS_CLASS[d.status]}">${STATUS_TEXT[d.status]}</td></tr>`);
+      + `<td class="${STATUS_CLASS[d.status]}">${dayStatus(d, value)}</td></tr>`);
   }));
   document.getElementById('reportTariffWrap').innerHTML =
     reportTable(['Tanggal', 'Mesin', 'Tarif 1', 'Tarif 2', 'T1+T2', 'Total', 'Selisih', 'Status'], tariffRows);

@@ -22,6 +22,14 @@ _HEADER_FONT = Font(color="FFFFFF", bold=True)
 _STATUS_LABEL = {"complete": "lengkap", "partial": "sebagian", "missing": "tanpa data"}
 
 
+def _status_text(status: str, source: dict) -> str:
+    """Status label, plus the measured window for partial days."""
+    label = _STATUS_LABEL[status]
+    if status == "partial" and source.get("coverage"):
+        return f"{label} ({source['coverage']})"
+    return label
+
+
 def month_bounds(year: int, month: int) -> tuple[date, date]:
     last_day = calendar.monthrange(year, month)[1]
     return date(year, month, 1), date(year, month, last_day)
@@ -34,6 +42,24 @@ def _sum(values: list[float | None]) -> float | None:
 
 def _has_data(value: dict) -> bool:
     return value["kwh"] is not None or value["t1"] is not None or value["t2"] is not None
+
+
+def _coverage_text(day_start, day_end, start, end) -> str | None:
+    """Short description of when the day was actually measured.
+
+    Returns None when the readings already span the whole day.
+    """
+    if start is None or end is None:
+        return None
+    opened = start <= day_start and (day_start - start) <= storage.COMPLETE_TOLERANCE
+    closed = end <= day_end and (day_end - end) <= storage.COMPLETE_TOLERANCE
+    if opened and closed:
+        return None
+    if not opened and not closed:
+        return f"{start:%H:%M}–{end:%H:%M}"
+    if not opened:
+        return f"mulai {start:%H:%M}"
+    return f"s/d {end:%H:%M}"
 
 
 def _meter_totals(rows: list[dict]) -> dict:
@@ -57,6 +83,7 @@ def build_report(year: int, month: int, meters: list[dict]) -> dict:
     day = first_day
     while day <= last_day:
         per_meter = stored.get(day, {})
+        day_start, day_end = storage.day_window(day)
         day_meters = {}
         for meter in meters:
             row = per_meter.get(meter["id"])
@@ -65,6 +92,11 @@ def build_report(year: int, month: int, meters: list[dict]) -> dict:
                 "t1": row["kwh_t1"] if row else None,
                 "t2": row["kwh_t2"] if row else None,
                 "complete": bool(row["complete"]) if row else False,
+                "coverage": _coverage_text(
+                    day_start, day_end,
+                    row["covered_from"] if row else None,
+                    row["covered_to"] if row else None,
+                ),
             }
 
         kwh = _sum([value["kwh"] for value in day_meters.values()])
@@ -85,11 +117,20 @@ def build_report(year: int, month: int, meters: list[dict]) -> dict:
         else:
             status = "complete"
 
+        raw_starts = [row["covered_from"] for row in per_meter.values() if row["covered_from"]]
+        raw_ends = [row["covered_to"] for row in per_meter.values() if row["covered_to"]]
+        day_coverage = _coverage_text(
+            day_start, day_end,
+            min(raw_starts) if raw_starts else None,
+            max(raw_ends) if raw_ends else None,
+        )
+
         days.append({
             "day": day.isoformat(),
             "dayNumber": day.day,
             "month": day.month,
             "weekday": day.weekday(),
+            "coverage": day_coverage,
             "meters": day_meters,
             "total": {
                 "kwh": kwh,
@@ -157,7 +198,7 @@ def build_workbook(report: dict) -> BytesIO:
                 weekday_names[entry["weekday"]],
             ]
             + [entry["meters"][m["id"]]["kwh"] for m in meters]
-            + [entry["total"]["kwh"], _STATUS_LABEL[entry["status"]]]
+            + [entry["total"]["kwh"], _status_text(entry["status"], entry)]
         )
     sheet.append([])
     sheet.append(["TOTAL"] + [""] * len(meters) + [report["monthTotals"]["kwh"], ""])
@@ -178,7 +219,7 @@ def build_workbook(report: dict) -> BytesIO:
             detail.append([
                 entry["day"], meter["id"], meter["name"], t1, t2, t1t2, total,
                 (total - t1t2) if (total is not None and t1t2 is not None) else None,
-                _STATUS_LABEL[entry["status"]],
+                _status_text(entry["status"], value),
             ])
     for row in detail.iter_rows(min_row=2, max_row=detail.max_row, min_col=4, max_col=8):
         for cell in row:

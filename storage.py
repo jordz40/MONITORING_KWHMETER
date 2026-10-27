@@ -72,6 +72,11 @@ DAY_END_HOUR = int(_setting("KWH_DAY_END_HOUR", "history", "day_end_hour", "22")
 # every minute does not turn a couple of missed polls into a "partial" day.
 COMPLETE_TOLERANCE = max(timedelta(minutes=2 * SAMPLE_MINUTES), timedelta(minutes=15))
 
+# How old the opening reading may be before it stops being a usable baseline.
+# Without this, a multi-day outage would make the next day's delta include all
+# the days that were never measured.
+BASELINE_MAX_AGE = timedelta(minutes=30)
+
 
 def _window(day: date) -> tuple[datetime, datetime]:
     """Start and end of the reporting day labelled `day`.
@@ -151,11 +156,19 @@ def connect() -> pymysql.connections.Connection:
         ) from exc
 
 
+_SCHEMA_UPGRADES = (
+    "ALTER TABLE daily ADD COLUMN IF NOT EXISTS covered_from DATETIME NULL",
+    "ALTER TABLE daily ADD COLUMN IF NOT EXISTS covered_to DATETIME NULL",
+)
+
+
 def init_schema() -> None:
-    """Create the tables if they do not exist yet."""
+    """Create the tables if they do not exist yet, then apply upgrades."""
     with connect() as conn:
         with conn.cursor() as cur:
             for statement in _SCHEMA:
+                cur.execute(statement)
+            for statement in _SCHEMA_UPGRADES:
                 cur.execute(statement)
 
 
@@ -244,6 +257,14 @@ def _write_days(cur, meter_id: str, first_day: date, last_day: date, readings: l
                 break
         return found
 
+    def first_within(day_start: datetime, day_end: datetime) -> dict | None:
+        for row in readings:
+            if day_start <= row["ts"] < day_end:
+                return row
+            if row["ts"] >= day_end:
+                break
+        return None
+
     def last_within(day_start: datetime, day_end: datetime) -> dict | None:
         found = None
         for row in readings:
@@ -257,25 +278,40 @@ def _write_days(cur, meter_id: str, first_day: date, last_day: date, readings: l
     while day <= last_day:
         day_start, day_end = _window(day)
         start = last_at_or_before(day_start)
+        if start is not None and (day_start - start["ts"]) > BASELINE_MAX_AGE:
+            # The last reading is days old: using it would count every hour
+            # that was never measured as if it belonged to this day.
+            start = None
+        has_edge = start is not None
+        if start is None:
+            # The program was not running when the day opened. Fall back to the
+            # first reading we do have, so the day still reports what was
+            # measured (flagged as partial) instead of showing nothing at all.
+            start = first_within(day_start, day_end)
         end = last_within(day_start, day_end)
 
+        usable = start is not None and end is not None and start["ts"] < end["ts"]
         complete = 1
-        if start is None or end is None:
+        if not usable or not has_edge:
             complete = 0
         elif day_start - start["ts"] > COMPLETE_TOLERANCE or day_end - end["ts"] > COMPLETE_TOLERANCE:
             complete = 0
 
         cur.execute(
-            "INSERT INTO daily (day, meter_id, kwh, kwh_t1, kwh_t2, complete) VALUES (%s, %s, %s, %s, %s, %s) "
+            "INSERT INTO daily (day, meter_id, kwh, kwh_t1, kwh_t2, complete, covered_from, covered_to) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
             "ON DUPLICATE KEY UPDATE kwh = VALUES(kwh), kwh_t1 = VALUES(kwh_t1), "
-            "kwh_t2 = VALUES(kwh_t2), complete = VALUES(complete)",
+            "kwh_t2 = VALUES(kwh_t2), complete = VALUES(complete), "
+            "covered_from = VALUES(covered_from), covered_to = VALUES(covered_to)",
             (
                 day,
                 meter_id,
-                _difference(end["kwh"] if end else None, start["kwh"] if start else None),
-                _difference(end["kwh_t1"] if end else None, start["kwh_t1"] if start else None),
-                _difference(end["kwh_t2"] if end else None, start["kwh_t2"] if start else None),
+                _difference(end["kwh"], start["kwh"]) if usable else None,
+                _difference(end["kwh_t1"], start["kwh_t1"]) if usable else None,
+                _difference(end["kwh_t2"], start["kwh_t2"]) if usable else None,
                 complete,
+                start["ts"] if start is not None else None,
+                end["ts"] if end is not None else None,
             ),
         )
         day += timedelta(days=1)
@@ -323,8 +359,8 @@ def daily_rows(first_day: date, last_day: date) -> list[dict]:
     with connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT day, meter_id, kwh, kwh_t1, kwh_t2, complete FROM daily "
-                "WHERE day >= %s AND day <= %s ORDER BY day, meter_id",
+                "SELECT day, meter_id, kwh, kwh_t1, kwh_t2, complete, covered_from, covered_to "
+                "FROM daily WHERE day >= %s AND day <= %s ORDER BY day, meter_id",
                 (first_day, last_day),
             )
             return cur.fetchall()

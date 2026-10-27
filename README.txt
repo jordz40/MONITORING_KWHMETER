@@ -120,10 +120,15 @@ and is labelled with the date it closes on, so one row holds a full LWBP + WBP
 cycle. Changing day_end_hour rebuilds the daily table automatically.
 
 A day is marked "sebagian" (partial) when the readings do not bracket its edges
-closely, and "tanpa data" when there was no reading at all - numbers are never
-invented. Meters that are not installed yet are ignored when judging a day.
-Because the meter only stores a running total, a day cannot be reconstructed
-after the fact, so the program should run 24/7 (see below).
+closely, and "tanpa data" when there was no reading at all. A partial day still
+reports the part that was actually measured and says where that window started
+or ended, for example "mulai 14:22" or "s/d 05:15". An opening reading older
+than 30 minutes is never used as a baseline, otherwise a multi-day outage would
+make one day's total swallow every day that was never measured. Meters that are
+not installed yet are ignored when judging a day.
+
+Because the meter only stores a running total, a day that was never sampled
+cannot be reconstructed after the fact, so the program should run 24/7.
 
 Reports
 -------
