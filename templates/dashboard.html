@@ -11,7 +11,7 @@
 <header>
   <div class="brand"><div class="bolt">⚡</div><div><b>ENERGY<br>MONITORING</b><small>POWER MONITORING</small></div></div>
   <div class="title">FRONTE CLASSIC INDONESIA<small>ENGINEERING TEAM</small></div>
-  <div class="top-status"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light mode">☀ Light mode</button><i id="statusDot"></i> <span id="systemStatus">CONNECTING</span> <em id="clock">--:--:--</em>　◉ ADMINISTRATOR⌄</div>
+  <div class="top-status"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light mode">☀ Light mode</button><i id="statusDot"></i> <span id="systemStatus">CONNECTING</span> <em id="dateLabel">-- --- ----</em><em id="clock">--:--:--</em>　◉ ADMINISTRATOR⌄</div>
 </header>
 
 <div class="layout">
@@ -263,8 +263,8 @@ function applyChartTheme(c) {
   if (!c) return;
   const dark = document.body.dataset.theme === 'dark';
   c.options.plugins.legend.labels.color = dark ? '#c8d6e2' : '#526b7a';
-  c.options.scales.x = {ticks: {color: dark ? '#9fb1c0' : '#718792'}, grid: {color: dark ? '#2d3d4d' : '#e3eaee'}};
-  c.options.scales.y = {beginAtZero: true, ticks: {color: dark ? '#9fb1c0' : '#718792'}, grid: {color: dark ? '#2d3d4d' : '#e3eaee'}};
+  c.options.scales.x = {ticks: {color: dark ? '#9fb1c0' : '#4f5b64'}, grid: {color: dark ? '#2d3d4d' : '#7d878f', lineWidth: 1}};
+  c.options.scales.y = {beginAtZero: true, ticks: {color: dark ? '#9fb1c0' : '#4f5b64'}, grid: {color: dark ? '#2d3d4d' : '#7d878f', lineWidth: 1}};
   c.update('none');
 }
 
@@ -393,7 +393,9 @@ async function refresh() {
   document.getElementById('kwhT2').textContent = fmt(d.totals.kwh_t2);
   document.getElementById('kva').textContent = fmt(d.totals.kva);
   document.getElementById('pf').textContent = fmt(d.totals.pf, 2);
-  document.getElementById('clock').textContent = d.updated.split(' ').pop();
+  const stamp = d.updated.split(' ');
+  document.getElementById('clock').textContent = stamp[stamp.length - 1];
+  document.getElementById('dateLabel').textContent = stamp.slice(0, -1).join(' ');
 
   document.getElementById('machines').innerHTML = d.machines.map(m => `
     <div class="machine" onclick="openMachine('${m.id}')">

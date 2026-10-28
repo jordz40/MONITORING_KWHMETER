@@ -20,6 +20,11 @@ import storage
 
 app = Flask(__name__)
 
+# Reload dashboard.html on every request so UI tweaks take effect with a normal
+# browser refresh instead of a process restart.
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
+
 # --- DR134 Modbus TCP endpoint ---------------------------------------------
 # The USR-DR134 takes its address from DHCP, so it can move to a new IP without
 # warning. By default the dashboard discovers it automatically by scanning the

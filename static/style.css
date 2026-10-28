@@ -158,3 +158,51 @@ body[data-theme="dark"] .heatmap .hm-day{background:#202d38;color:#d2dee8}
 body[data-theme="dark"] .heatmap .hm-empty{background:#1a2631}
 .heatmap-legend{margin:0;padding:8px 16px 14px;font-size:9px;color:#718792}
 body[data-theme="dark"] .heatmap-legend{color:#9aabba}
+
+/* Header status row: date beside the clock, tightened so nothing gets clipped */
+.top-status{padding:15px 10px;white-space:nowrap}
+.top-status em{margin-left:10px}
+.top-status .theme-toggle{margin-right:8px}
+.title{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
+/* Readability: near-black muted text in light mode, and larger type overall */
+body{font-size:13px}
+body:not([data-theme="dark"]){color:#0d1b26}
+body:not([data-theme="dark"]) small{color:#0d1b26}
+body:not([data-theme="dark"]) .top-status em,
+body:not([data-theme="dark"]) .info-row span,
+body:not([data-theme="dark"]) .settings-list span,
+body:not([data-theme="dark"]) .report-note p,
+body:not([data-theme="dark"]) .sidebox p{color:#0d1b26}
+body:not([data-theme="dark"]) .measure-table th,
+body:not([data-theme="dark"]) .event-table th,
+body:not([data-theme="dark"]) .heatmap th,
+body:not([data-theme="dark"]) .heatmap-legend{color:#0d1b26}
+body:not([data-theme="dark"]) .theme-toggle{color:#0d1b26}
+body:not([data-theme="dark"]) .factory,
+body:not([data-theme="dark"]) nav a{color:#13232f}
+
+.brand small,.title small,.sidebox small,.sidebox p{font-size:9px}
+.top-status{font-size:11px}
+.kpis small{font-size:10px}
+.values small{font-size:9px}
+.panel-title small{font-size:10px}
+.detail-kpis small{font-size:9px}
+.measure-table,.event-table{font-size:11px}
+.measure-table th,.event-table th{font-size:9px}
+.info-row{font-size:10px}
+.report-card small{font-size:10px}
+.settings-list span,.settings-list b{font-size:11px}
+.heatmap th{font-size:9px}
+.heatmap-legend{font-size:10px}
+
+/* Reports / Load Profile: darker separators so they are visible in light mode */
+body:not([data-theme="dark"]) .measure-table th,
+body:not([data-theme="dark"]) .measure-table td,
+body:not([data-theme="dark"]) .event-table th,
+body:not([data-theme="dark"]) .event-table td{border-color:#aeb9c1}
+body:not([data-theme="dark"]) .heatmap td,
+body:not([data-theme="dark"]) .heatmap th{border-color:#aeb9c1}
+body:not([data-theme="dark"]) .heatmap th{background:#e8eef2}
+body:not([data-theme="dark"]) .heatmap .hm-day{background:#e8eef2}
+body:not([data-theme="dark"]) .heatmap .hm-empty{background:#dfe6ea}
