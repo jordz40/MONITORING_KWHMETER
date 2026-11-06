@@ -9,15 +9,21 @@ Current meter configuration
 ----------------------------
 - DR134 IP: AUTO-DETECTED (see below)
 - TCP port: 502
-- Meters: 5 on one RS-485 daisy chain
+- Meters: 6 on one RS-485 daisy chain
 - Serial settings on DR134 and meter must match (currently 19200, 8 data bits,
   Even parity, 1 stop bit).
 
-    Slave ID 1   M01   Mesin Extruder
-    Slave ID 2   M02   Mesin Coating
-    Slave ID 3   M03   Mesin Trimming HDL 1
-    Slave ID 4   M04   Mesin Trimming HDL 2
-    Slave ID 5   M05   Mesin Trimming HDL 3
+    Slave ID 1   M01   Pemanas Extruder
+    Slave ID 6   M02   Motor Extruder
+    Slave ID 2   M03   Mesin Coating
+    Slave ID 3   M04   Mesin Trimming HDL 1
+    Slave ID 4   M05   Mesin Trimming HDL 2
+    Slave ID 5   M06   Mesin Trimming HDL 3
+
+Only ONE copy of the app may run: each copy is a separate Modbus master and
+the two would collide on the shared RS-485 bus, making meters drop out at
+random. The app now refuses to start a second time (it holds local port 49999,
+override with KWH_LOCK_PORT).
 
 Automatic DR134 IP discovery
 ----------------------------
@@ -86,7 +92,7 @@ reads the counters; which tariff is active is decided by the meter).
 
 Diagnostics
 -----------
-Open http://127.0.0.1:5000/api/discover to force a network scan. It reports the
+Open http://127.0.0.1:40000/api/discover to force a network scan. It reports the
 hosts with port 502 open and which one answered Modbus. The dashboard Settings
 page also has a "Re-scan network" button, the detected gateway IP and the last
 error message.
@@ -133,7 +139,7 @@ cannot be reconstructed after the fact, so the program should run 24/7.
 Reports
 -------
 Open the Reports tab: pick a month and a year to see the daily kWh per machine
-(M01..M05) plus the factory total, a daily bar chart, the monthly totals and a
+(M01..M06) plus the factory total, a daily bar chart, the monthly totals and a
 "Rincian tarif" toggle for the Tarif 1 / Tarif 2 breakdown. "Ekspor Excel"
 downloads an .xlsx with three sheets: Harian per Mesin, Rincian Tarif and
 Ringkasan Bulanan. The same data is available as JSON at
@@ -166,23 +172,27 @@ Run
 1. Install dependencies: pip install -r requirements.txt
 2. Copy config.ini.example to config.ini and fill in the database password
 3. Start the dashboard: python app.py
-4. Open http://127.0.0.1:5000
+4. Open http://127.0.0.1:40000 (the port comes from [dashboard] port)
 
 For a server deployment, set [dashboard] host = 0.0.0.0 in config.ini so other
 computers can reach it, and run it as a Windows service / Task Scheduler task so
-it keeps collecting history without anyone opening a terminal.
+it keeps collecting history without anyone opening a terminal. The app can be
+started from any folder (no absolute paths) - but only ONE copy may run at a
+time, and it must be the copy whose config.ini has this machine's settings.
 
-The web server polls five iEM3155 values every time the browser refreshes the
-data endpoint: average L-L voltage, total active power, total apparent power,
-total power factor, and total active energy import. Measurements are read
-sequentially and combined into one dashboard update.
+A background thread reads each meter every 3 s: average L-L voltage, total
+active power, total apparent power, total power factor and the R/S/T currents.
+Energy counters (total, Tarif 1, Tarif 2) move slowly, so they are refreshed
+once a minute instead of on every poll; that keeps the shared RS-485 bus well
+below saturation. The web API only serves the latest snapshot, so a browser
+request never waits on the meter.
 
 Adding meters
 -------------
 Configure a unique Modbus Slave ID on each meter. Add one entry per connected
 meter to METER_CONFIG in app.py, for example:
 
-    {"id": "M02", "name": "TRIMMING 2", "slave_id": 2},
+    {"id": "M07", "name": "TRIMMING 4", "slave_id": 7},
 
-All meters on the RS-485 bus must use the same serial settings. Keep the meter
-IDs unique. All five meters above are already configured in METER_CONFIG.
+All meters on the RS-485 bus must use the same serial settings. Keep the IDs
+unique. All six meters above are already configured in METER_CONFIG.

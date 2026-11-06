@@ -42,7 +42,7 @@ MANUAL_SUBNETS = [part.strip() for part in os.environ.get("DR134_SUBNET", "").sp
 # The DR134 bridges to the meter over RS-485. The line is half-duplex and the
 # gateway needs a short gap between transactions, otherwise responses get lost.
 # Modbus Poll works because it scans each window once per second.
-MODBUS_TIMEOUT_SECONDS = float(os.environ.get("DR134_TIMEOUT", "1.5"))
+MODBUS_TIMEOUT_SECONDS = float(os.environ.get("DR134_TIMEOUT", "2.5"))
 MODBUS_REQUEST_DELAY_SECONDS = float(os.environ.get("DR134_REQUEST_DELAY", "0.05"))
 # The DR134 broadcasts other masters' frames to every client, so a reply may be
 # preceded by many unrelated frames. Cap how many we skip before giving up.
@@ -53,6 +53,10 @@ MODBUS_TRANSACTION_BASE = 0xF000
 # One background thread polls the meter; the web API only serves the latest
 # snapshot, so a request can never block on the (slow, shared) RS-485 bus.
 POLL_INTERVAL_SECONDS = float(os.environ.get("DR134_POLL_INTERVAL", "3"))
+
+# Fixed local port used to stop a second copy of the app from starting. Two
+# copies would talk to the same RS-485 bus as separate Modbus masters.
+INSTANCE_LOCK_PORT = int(os.environ.get("KWH_LOCK_PORT", "49999"))
 
 # Discovery tuning. The first response from an RS-485 gateway can take up to a
 # scan cycle, so the Modbus probe waits longer than a plain port check. The
@@ -66,11 +70,12 @@ DISCOVERY_MAX_HOSTS = 1024
 # One entry per physical meter. Every meter on the shared RS-485 bus needs a
 # unique Modbus Slave ID.
 METER_CONFIG = [
-    {"id": "M01", "name": "Mesin Extruder", "slave_id": 1},
-    {"id": "M02", "name": "Mesin Coating", "slave_id": 2},
-    {"id": "M03", "name": "Mesin Trimming HDL 1", "slave_id": 3},
-    {"id": "M04", "name": "Mesin Trimming HDL 2", "slave_id": 4},
-    {"id": "M05", "name": "Mesin Trimming HDL 3", "slave_id": 5},
+    {"id": "M01", "name": "Pemanas Extruder", "slave_id": 1},
+    {"id": "M02", "name": "Motor Extruder", "slave_id": 6},
+    {"id": "M03", "name": "Mesin Coating", "slave_id": 2},
+    {"id": "M04", "name": "Mesin Trimming HDL 1", "slave_id": 3},
+    {"id": "M05", "name": "Mesin Trimming HDL 2", "slave_id": 4},
+    {"id": "M06", "name": "Mesin Trimming HDL 3", "slave_id": 5},
 ]
 
 # iEM3155 Modbus PDU (zero-based) addresses, matching the register list. Each
@@ -121,6 +126,10 @@ _current_host = MANUAL_HOST
 _last_discovery = 0.0
 _last_error: str | None = None
 _history = []
+# Energy counters move slowly: keep the last reading and refresh it once a
+# minute instead of on every 3 s poll, which halves the RS-485 traffic.
+_energy_cache: dict[str, dict] = {}
+_last_energy_minute: datetime | None = None
 _transaction_id = MODBUS_TRANSACTION_BASE - 1
 _state_lock = threading.Lock()
 _poller_lock = threading.Lock()
@@ -196,7 +205,7 @@ def _read_float32(sock: socket.socket, slave_id: int, address: int) -> float:
     return struct.unpack(">f", _read_block(sock, slave_id, address, 2)[0:4])[0]
 
 
-def _read_meter(sock: socket.socket, meter: dict) -> dict:
+def _read_meter(sock: socket.socket, meter: dict, read_energy: bool = True) -> dict:
     readings: dict[str, float | None] = {key: None for key in REGISTER_MAP}
     errors: list[str] = []
 
@@ -214,7 +223,10 @@ def _read_meter(sock: socket.socket, meter: dict) -> dict:
     # of burning another timeout on it. This keeps polling quick while meters
     # are still being installed.
     meter_answered = any(readings[key] is not None for key in VALUE_KEYS)
-    if meter_answered:
+    meter_id = meter["id"]
+    need_energy = read_energy or meter_id not in _energy_cache
+
+    if meter_answered and need_energy:
         time.sleep(MODBUS_REQUEST_DELAY_SECONDS)
         try:
             block = _read_block(sock, meter["slave_id"], ENERGY_BLOCK_START, ENERGY_BLOCK_COUNT)
@@ -224,25 +236,31 @@ def _read_meter(sock: socket.socket, meter: dict) -> dict:
         except (OSError, ModbusError, struct.error) as exc:
             errors.append(f"energi: {exc}")
 
-    # Some firmware answers NaN for the Float32 energy copies above (the
-    # Extruder meter does). The 64-bit Wh counters hold the same totals, so
-    # fill in anything that is still missing from them.
-    if meter_answered and readings["kwh"] is None:
-        try:
-            raw = _read_block(sock, meter["slave_id"], ENERGY_INT64_ADDRESS, 4)
-            readings["kwh"] = struct.unpack(">q", raw[:8])[0] / 1000.0
-        except (OSError, ModbusError, struct.error) as exc:
-            errors.append(f"energi 64-bit: {exc}")
+        # Some firmware answers NaN for the Float32 energy copies above (the
+        # Extruder meters do). The 64-bit Wh counters hold the same totals, so
+        # fill in anything that is still missing from them.
+        if readings["kwh"] is None:
+            try:
+                raw = _read_block(sock, meter["slave_id"], ENERGY_INT64_ADDRESS, 4)
+                readings["kwh"] = struct.unpack(">q", raw[:8])[0] / 1000.0
+            except (OSError, ModbusError, struct.error) as exc:
+                errors.append(f"energi 64-bit: {exc}")
 
-    if meter_answered and (readings["kwh_t1"] is None or readings["kwh_t2"] is None):
-        try:
-            raw = _read_block(sock, meter["slave_id"], TARIFF_INT64_ADDRESS, 8)
-            if readings["kwh_t1"] is None:
-                readings["kwh_t1"] = struct.unpack(">q", raw[0:8])[0] / 1000.0
-            if readings["kwh_t2"] is None:
-                readings["kwh_t2"] = struct.unpack(">q", raw[8:16])[0] / 1000.0
-        except (OSError, ModbusError, struct.error) as exc:
-            errors.append(f"tarif 64-bit: {exc}")
+        if readings["kwh_t1"] is None or readings["kwh_t2"] is None:
+            try:
+                raw = _read_block(sock, meter["slave_id"], TARIFF_INT64_ADDRESS, 8)
+                if readings["kwh_t1"] is None:
+                    readings["kwh_t1"] = struct.unpack(">q", raw[0:8])[0] / 1000.0
+                if readings["kwh_t2"] is None:
+                    readings["kwh_t2"] = struct.unpack(">q", raw[8:16])[0] / 1000.0
+            except (OSError, ModbusError, struct.error) as exc:
+                errors.append(f"tarif 64-bit: {exc}")
+
+        if any(readings[key] is not None for key in ENERGY_KEYS):
+            _energy_cache[meter_id] = {key: readings[key] for key in ENERGY_KEYS}
+    elif meter_answered:
+        for key, value in _energy_cache.get(meter_id, {}).items():
+            readings[key] = value
 
     online = any(value is not None for value in readings.values())
     return {**meter, **readings, "online": online, "error": "; ".join(errors) or None}
@@ -404,7 +422,7 @@ def _active_host() -> str | None:
         return _current_host
 
 
-def _poll_host(host: str) -> list[dict] | None:
+def _poll_host(host: str, read_energy: bool = True) -> list[dict] | None:
     """Poll every meter over one connection. Returns None if connect fails."""
     try:
         with socket.create_connection((host, MODBUS_PORT), timeout=MODBUS_TIMEOUT_SECONDS) as sock:
@@ -412,7 +430,7 @@ def _poll_host(host: str) -> list[dict] | None:
             results = []
             for meter in METER_CONFIG:
                 try:
-                    results.append(_read_meter(sock, meter))
+                    results.append(_read_meter(sock, meter, read_energy))
                 except (OSError, ModbusError, struct.error) as exc:
                     results.append(_empty_meter(meter, str(exc)))
             return results
@@ -423,13 +441,21 @@ def _poll_host(host: str) -> list[dict] | None:
 def _poll_all_meters() -> list[dict]:
     # One TCP connection and one Modbus master poll the meters sequentially.
     # This avoids each dashboard browser tab opening its own meter connection.
-    global _current_host, _last_error
+    global _current_host, _last_error, _last_energy_minute
+    # The energy counters change slowly, so refresh them on the first poll of
+    # each minute rather than on every poll. That keeps the shared RS-485 bus
+    # well below saturation and stops the intermittent read timeouts.
+    minute = datetime.now().replace(second=0, microsecond=0)
+    read_energy = minute != _last_energy_minute
+
     with _poll_lock:
         host = _resolve_host()
         if host:
-            results = _poll_host(host)
+            results = _poll_host(host, read_energy)
             if results is not None:
                 _last_error = None
+                if read_energy:
+                    _last_energy_minute = minute
                 return results
             # The remembered address stopped answering; DHCP likely moved the
             # DR134. Forget it and scan again immediately.
@@ -438,9 +464,11 @@ def _poll_all_meters() -> list[dict]:
                 _current_host = None
             host = _resolve_host(force=True)
             if host:
-                results = _poll_host(host)
+                results = _poll_host(host, read_energy)
                 if results is not None:
                     _last_error = None
+                    if read_energy:
+                        _last_energy_minute = minute
                     return results
 
         _last_error = "DR134 tidak ditemukan otomatis di jaringan lokal."
@@ -731,7 +759,29 @@ def profile_excel():
     )
 
 
+def _acquire_instance_lock() -> socket.socket | None:
+    """Hold a fixed local port so a second copy of the app cannot start.
+
+    Two copies would both poll the same RS-485 bus as separate Modbus masters,
+    which makes the meters answer intermittently - the classic "suddenly
+    offline" symptom. Returns the socket to keep it bound, or None if taken.
+    """
+    guard = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        guard.bind(("127.0.0.1", INSTANCE_LOCK_PORT))
+    except OSError:
+        guard.close()
+        return None
+    return guard
+
+
 if __name__ == "__main__":
+    guard = _acquire_instance_lock()
+    if guard is None:
+        print("Aplikasi sudah berjalan di proses lain.")
+        print(f"Hentikan instance itu dulu (port kunci {INSTANCE_LOCK_PORT}), lalu jalankan lagi.")
+        raise SystemExit(1)
+
     # Poll in the background so web requests never block on the meter.
     start_poller()
     # Disable the reloader so it does not create duplicate polling processes.
