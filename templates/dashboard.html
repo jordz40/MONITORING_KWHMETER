@@ -11,7 +11,7 @@
 <header>
   <div class="brand"><div class="bolt">⚡</div><div><b>ENERGY<br>MONITORING</b><small>POWER MONITORING</small></div></div>
   <div class="title">FRONTE CLASSIC INDONESIA<small>ENGINEERING TEAM</small></div>
-  <div class="top-status"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light mode">☀ Light mode</button><i id="statusDot"></i> <span id="systemStatus">CONNECTING</span> <em id="dateLabel">-- --- ----</em><em id="clock">--:--:--</em>　◉ ADMINISTRATOR⌄</div>
+  <div class="top-status"><button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to light mode">☀ Light mode</button><i id="statusDot"></i> <span id="systemStatus">CONNECTING</span> <em id="dateLabel">-- --- ----</em><em id="clock">--:--:--</em><span class="admin-label">　◉ ADMINISTRATOR⌄</span></div>
 </header>
 
 <div class="layout">
@@ -164,7 +164,7 @@
     <section class="panel settings-list">
       <div><span>Factory</span><b>FACTORY A</b></div>
       <div><span>Assets</span><b id="settingsAssets">Configured meters</b></div>
-      <div><span>Meter</span><b>Schneider Electric iEM3155</b></div>
+      <div><span>Meter</span><b>Schneider Electric iEM3155 / iEM3255</b></div>
       <div><span>Protocol</span><b>Modbus TCP via USR-DR134</b></div>
       <div><span>Gateway IP</span><b id="settingsHost">--</b></div>
       <div><span>Data source</span><b>LIVE METER DATA</b></div>
@@ -214,7 +214,7 @@
         <div class="info-row"><span>Asset ID</span><b id="dId">--</b></div>
         <div class="info-row"><span>Status</span><b class="online-text" id="dStatus">--</b></div>
         <div class="info-row"><span>Communication</span><b>MODBUS TCP · DR134</b></div>
-        <div class="info-row"><span>Meter</span><b>Schneider iEM3155</b></div>
+        <div class="info-row"><span>Meter</span><b>Schneider iEM3155 / iEM3255</b></div>
         <div class="info-row"><span>Last Update</span><b id="dUpdated">--</b></div>
       </section>
     </div>
@@ -230,8 +230,16 @@ const fmt = (n, d = 1) => {
 const baseLineOptions = {
   responsive: true,
   maintainAspectRatio: false,
-  plugins: {legend: {position: 'bottom'}},
-  scales: {y: {beginAtZero: true}}
+  plugins: {
+    legend: {position: 'bottom'},
+    tooltip: {callbacks: {label: ctx => `${ctx.dataset.label}: ${ctx.formattedValue} ${ctx.datasetIndex === 0 ? 'kW' : 'kVA'}`}}
+  },
+  scales: {
+    x: {title: {display: true, text: 'Waktu'}},
+    // The top of the scale is set from the data on every refresh so the peak
+    // always keeps 20% of headroom instead of grazing the top gridline.
+    y: {beginAtZero: true, title: {display: true, text: 'kW'}}
+  }
 };
 
 const chart = new Chart(document.getElementById('powerChart'), {
@@ -262,9 +270,26 @@ const machineSeries = {};
 function applyChartTheme(c) {
   if (!c) return;
   const dark = document.body.dataset.theme === 'dark';
-  c.options.plugins.legend.labels.color = dark ? '#c8d6e2' : '#526b7a';
-  c.options.scales.x = {ticks: {color: dark ? '#9fb1c0' : '#4f5b64'}, grid: {color: dark ? '#2d3d4d' : '#7d878f', lineWidth: 1}};
-  c.options.scales.y = {beginAtZero: true, ticks: {color: dark ? '#9fb1c0' : '#4f5b64'}, grid: {color: dark ? '#2d3d4d' : '#7d878f', lineWidth: 1}};
+  const tick = dark ? '#9fb1c0' : '#4f5b64';
+  const grid = dark ? '#2d3d4d' : '#7d878f';
+  // Write into the chart's own config object, not into chart.options: the
+  // latter is Chart.js's internal option proxy, and copying out of it hands
+  // back its private bookkeeping fields.
+  const options = c.config.options;
+  options.plugins = options.plugins || {};
+  options.plugins.legend = options.plugins.legend || {};
+  options.plugins.legend.labels = Object.assign({}, options.plugins.legend.labels, {
+    color: dark ? '#c8d6e2' : '#526b7a'
+  });
+  options.scales = options.scales || {};
+  ['x', 'y'].forEach(key => {
+    const scale = options.scales[key] = options.scales[key] || {};
+    scale.ticks = Object.assign({}, scale.ticks, {color: tick});
+    scale.grid = Object.assign({}, scale.grid, {color: grid, lineWidth: 1});
+    if (scale.title && scale.title.display) {
+      scale.title = Object.assign({}, scale.title, {color: tick});
+    }
+  });
   c.update('none');
 }
 
@@ -337,8 +362,11 @@ function updateMachineDetail() {
   if (!machineChart) {
     machineChart = new Chart(document.getElementById('machineChart'), {
       type: 'line',
-      data: {labels: [], datasets: [{label: 'Active Power (kW)', data: [], borderWidth: 2, tension: .35}]},
-      options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'bottom'}}, scales: {y: {beginAtZero: true}}}
+      data: {labels: [], datasets: [{label: 'Active Power', data: [], borderWidth: 2, tension: .35}]},
+      options: {responsive: true, maintainAspectRatio: false,
+                plugins: {legend: {position: 'bottom'},
+                          tooltip: {callbacks: {label: ctx => `${ctx.dataset.label}: ${ctx.formattedValue} kW`}}},
+                scales: {y: {beginAtZero: true, grace: '20%'}}}
     });
     applyChartTheme(machineChart);
   }
@@ -437,15 +465,18 @@ async function refresh() {
   document.getElementById('settingsHost').textContent = host ? `${host}:${d.dr134.port}` : 'Auto-detect · not found';
   document.getElementById('settingsError').textContent = d.dr134.error || 'None';
 
-  chart.data.labels = d.history.map(x => x.time);
-  chart.data.datasets[0].data = d.history.map(x => x.kw);
-  chart.data.datasets[1].data = d.history.map(x => x.kva);
-  chart.update('none');
+  const kwSeries = d.history.map(x => x.kw);
+  const kvaSeries = d.history.map(x => x.kva);
+  const peak = Math.max(...kwSeries, ...kvaSeries);
+  const top = Number.isFinite(peak) && peak > 0 ? Math.ceil(peak * 1.2) : undefined;
 
-  trendChart.data.labels = d.history.map(x => x.time);
-  trendChart.data.datasets[0].data = d.history.map(x => x.kw);
-  trendChart.data.datasets[1].data = d.history.map(x => x.kva);
-  trendChart.update('none');
+  [chart, trendChart].forEach(c => {
+    c.config.options.scales.y.max = top;
+    c.data.labels = d.history.map(x => x.time);
+    c.data.datasets[0].data = kwSeries;
+    c.data.datasets[1].data = kvaSeries;
+    c.update('none');
+  });
 
   const db = d.storage || {};
   document.getElementById('settingsDb').textContent = `${db.database}@${db.host}:${db.port}`;
@@ -537,8 +568,10 @@ function renderReport(data) {
   if (!reportChart) {
     reportChart = new Chart(document.getElementById('reportChart'), {
       type: 'bar',
-      data: {labels: [], datasets: [{label: 'Total kWh', data: [], backgroundColor: '#168ec8'}]},
-      options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
+      data: {labels: [], datasets: [{label: 'Total', data: [], backgroundColor: '#168ec8'}]},
+      options: {responsive: true, maintainAspectRatio: false,
+                plugins: {legend: {display: false},
+                          tooltip: {callbacks: {label: ctx => `${ctx.dataset.label}: ${ctx.formattedValue} kWh`}}},
                 scales: {x: {grid: {display: false}}, y: {beginAtZero: true}}}
     });
     applyChartTheme(reportChart);
@@ -635,8 +668,10 @@ function renderProfile(data) {
   if (!profileChart) {
     profileChart = new Chart(document.getElementById('profileChart'), {
       type: 'bar',
-      data: {labels: [], datasets: [{label: 'Rata-rata kW', data: [], backgroundColor: '#168ec8'}]},
-      options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}},
+      data: {labels: [], datasets: [{label: 'Rata-rata', data: [], backgroundColor: '#168ec8'}]},
+      options: {responsive: true, maintainAspectRatio: false,
+                plugins: {legend: {display: false},
+                          tooltip: {callbacks: {label: ctx => `${ctx.dataset.label}: ${ctx.formattedValue} kW`}}},
                 scales: {x: {grid: {display: false}}, y: {beginAtZero: true}}}
     });
     applyChartTheme(profileChart);

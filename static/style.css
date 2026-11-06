@@ -206,3 +206,71 @@ body:not([data-theme="dark"]) .heatmap th{border-color:#aeb9c1}
 body:not([data-theme="dark"]) .heatmap th{background:#e8eef2}
 body:not([data-theme="dark"]) .heatmap .hm-day{background:#e8eef2}
 body:not([data-theme="dark"]) .heatmap .hm-empty{background:#dfe6ea}
+
+/* Mobile / Android phone: stack the layout and turn the sidebar into a
+   horizontally scrollable bar so the dashboard stays readable at ~400px. */
+@media (max-width:760px){
+  body{overflow-x:hidden}
+  header{height:auto;flex-wrap:wrap;align-items:center}
+  .brand{width:auto;height:46px;border-right:0;padding:0 10px;gap:8px}
+  .bolt{font-size:18px}
+  .brand b{font-size:10px;line-height:11px;letter-spacing:.4px}
+  .brand small{display:none}
+  .title{flex:1 1 auto;order:1;font-size:12px;padding:0 10px 0 0;letter-spacing:.3px}
+  .title small{display:none}
+  .top-status{order:2;width:100%;height:auto;border-left:0;border-top:1px solid #dce4e8;padding:7px 10px;font-size:9px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;white-space:normal}
+  .top-status em{margin-left:0}
+  .admin-label{display:none}
+
+  .layout{flex-direction:column;min-height:0}
+  aside{width:100%;border-right:0;border-bottom:1px solid #cbd7de;position:static}
+  .factory,.sidebox{display:none}
+  nav{display:flex;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  nav::-webkit-scrollbar{display:none}
+  nav a{flex:0 0 auto;height:auto;padding:12px 14px;white-space:nowrap;border-bottom:0;border-right:1px solid #edf1f3}
+  nav a.active{border-left:0;border-bottom:3px solid #0089d0;padding-left:14px}
+
+  main{padding:10px 10px 24px;min-width:0}
+  .pagehead{flex-wrap:wrap;gap:6px}
+  .pagehead h1{font-size:14px}
+
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .kpis article{height:auto;min-height:86px;padding:16px 12px 10px;min-width:0}
+
+  .panel{min-width:0}
+  .machines{grid-template-columns:minmax(0,1fr);padding:8px;gap:8px}
+  .machine{min-width:0}
+  .machine .values{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+
+  .grid2{grid-template-columns:minmax(0,1fr)}
+  .chart-panel{height:auto}
+  .chart-panel canvas{height:210px!important;padding:0}
+  .alarm-panel{height:auto;max-height:280px}
+
+  .big-trend{height:auto}
+  .big-chart{height:300px;padding:8px}
+  .report-chart-box{height:230px;padding:8px}
+
+  .panel-title{height:auto;padding:11px 12px;line-height:1.5}
+  .panel-title small{display:block;margin:2px 0 0}
+  .panel-title span{float:none;display:inline-block;margin-top:6px}
+
+  .report-toolbar{padding:10px;gap:8px}
+  .report-grid{grid-template-columns:1fr}
+  .report-card{padding:18px 14px}
+
+  .modal{padding:0}
+  .modal-card{width:100%;max-height:100vh;border:0}
+  .modal-head{padding:12px 14px}
+  .modal-head h2{font-size:15px}
+  .detail-kpis{grid-template-columns:repeat(2,1fr);padding:8px;gap:6px}
+  .detail-kpis>div{padding:10px}
+  .detail-kpis b{font-size:17px}
+  .detail-grid{grid-template-columns:1fr;padding:0 8px 8px}
+  .detail-chart{height:220px}
+
+  .settings-list{max-width:none}
+  .settings-list>div{padding:12px;font-size:11px}
+  .measure-table th,.measure-table td,.event-table th,.event-table td{padding:9px 8px}
+  .heatmap .hm-cell{min-width:20px}
+}
