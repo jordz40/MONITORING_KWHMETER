@@ -521,7 +521,8 @@ def _record_history(meters: list[dict]) -> None:
             storage.finalize_days([meter["id"] for meter in METER_CONFIG])
             _last_finalize_day = now.date()
         _storage_state = {"ok": True, "error": None, "lastSample": now.strftime("%Y-%m-%d %H:%M:%S")}
-    except storage.StorageError as exc:
+    except Exception as exc:  # a dropped connection must not stop the recording
+        app.logger.warning("Gagal mencatat riwayat: %s", exc)
         _storage_state = {"ok": False, "error": str(exc)}
 
 
@@ -590,13 +591,16 @@ def _poll_loop() -> None:
         try:
             meters = _poll_all_meters()
             snapshot = _build_snapshot(meters)
-        except Exception:  # keep the poller alive whatever the meter does
-            app.logger.exception("Polling meter gagal.")
-        else:
             with _state_lock:
                 _latest = snapshot
+            # Inside the try on purpose: a database hiccup here used to escape
+            # the loop and kill this thread, so the dashboard kept serving a
+            # stale snapshot and nothing was recorded until a restart.
             _record_history(meters)
-        time.sleep(POLL_INTERVAL_SECONDS)
+        except Exception:  # keep the poller alive whatever the meter or DB does
+            app.logger.exception("Polling meter gagal.")
+        finally:
+            time.sleep(POLL_INTERVAL_SECONDS)
 
 
 def start_poller() -> None:
