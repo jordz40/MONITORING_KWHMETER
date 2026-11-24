@@ -9,7 +9,7 @@ Current meter configuration
 ----------------------------
 - DR134 IP: AUTO-DETECTED (see below)
 - TCP port: 502
-- Meters: 6 on one RS-485 daisy chain
+- Meters: 7 on one RS-485 daisy chain
 - Serial settings on DR134 and meter must match (currently 19200, 8 data bits,
   Even parity, 1 stop bit).
 
@@ -19,6 +19,7 @@ Current meter configuration
     Slave ID 3   M04   Mesin Trimming HDL 1
     Slave ID 4   M05   Mesin Trimming HDL 2
     Slave ID 5   M06   Mesin Trimming HDL 3
+    Slave ID 7   M07   Mesin Emblem Welding 5kW
 
 Only ONE copy of the app may run: each copy is a separate Modbus master and
 the two would collide on the shared RS-485 bus, making meters drop out at
@@ -192,7 +193,8 @@ Adding meters
 Configure a unique Modbus Slave ID on each meter. Add one entry per connected
 meter to METER_CONFIG in app.py, for example:
 
-    {"id": "M07", "name": "TRIMMING 4", "slave_id": 7},
+    {"id": "M08", "name": "TRIMMING 4", "slave_id": 8},
 
 All meters on the RS-485 bus must use the same serial settings. Keep the IDs
-unique. All six meters above are already configured in METER_CONFIG.
+unique: two meters answering the same slave id collide on the bus and both drop
+out at random. All seven meters above are already configured in METER_CONFIG.

@@ -76,6 +76,7 @@ METER_CONFIG = [
     {"id": "M04", "name": "Mesin Trimming HDL 1", "slave_id": 3},
     {"id": "M05", "name": "Mesin Trimming HDL 2", "slave_id": 4},
     {"id": "M06", "name": "Mesin Trimming HDL 3", "slave_id": 5},
+    {"id": "M07", "name": "Mesin Emblem Welding 5kW", "slave_id": 7},
 ]
 
 # iEM3155 Modbus PDU (zero-based) addresses, matching the register list. Each
